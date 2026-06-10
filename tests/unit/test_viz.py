@@ -47,6 +47,23 @@ class TestVizFigures:
         # one trace per edge + one node trace
         assert len(fig.data) == len(mst.edges) + 1
 
+    def test_mst_layouts_all_render(self, rs5):
+        mst = build_mst(rs5)
+        for layout in ("auto", "circular", "spring"):
+            fig = plot_mst_network(mst, layout=layout)
+            assert isinstance(fig, go.Figure)
+            assert len(fig.data) == len(mst.edges) + 1
+
+    def test_circular_layout_places_all_nodes_on_unit_circle(self, rs5):
+        from src.viz.plots import _circular_layout
+        mst = build_mst(rs5)
+        idx = {t: i for i, t in enumerate(mst.tickers)}
+        pos = _circular_layout(mst.tickers, mst.edges, idx)
+        assert set(pos.keys()) == set(mst.tickers)
+        import numpy as np
+        for x, y in pos.values():
+            assert np.hypot(x, y) == pytest.approx(1.0, abs=1e-9)
+
     def test_factor_exposures_figure(self):
         np.random.seed(8)
         T = 600

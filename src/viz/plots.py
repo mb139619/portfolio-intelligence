@@ -123,18 +123,39 @@ def plot_factor_exposures(model, title: str = "Factor exposures (beta)") -> go.F
 # 3. MST network graph — the risk topology
 # ─────────────────────────────────────────────────────────────────────────
 
-def plot_mst_network(mst, title: str = "Risk topology — Minimum Spanning Tree") -> go.Figure:
+def plot_mst_network(
+    mst,
+    title: str = "Risk topology — Minimum Spanning Tree",
+    layout: str = "auto",
+    small_threshold: int = 8,
+) -> go.Figure:
     """
     Network graph of the asset tree. Node size scales with degree (hubs are
-    bigger), edge width scales with correlation strength. A simple spring
-    layout is computed locally (no networkx dependency).
+    bigger), edge width scales with correlation strength. No networkx dependency.
+
+    layout:
+      "auto"     — circular for small graphs (≤ small_threshold nodes) or pure
+                   chains, spring otherwise. Force-directed layouts collapse a
+                   5-node chain onto a straight diagonal, which hides the
+                   structure; a circle keeps every node and edge readable.
+      "circular" — force a ring layout.
+      "spring"   — force the Fruchterman-Reingold layout.
     """
     tickers = mst.tickers
     n = len(tickers)
     idx = {t: i for i, t in enumerate(tickers)}
 
-    # --- spring layout (Fruchterman-Reingold, lightweight) ---
-    pos = _spring_layout(tickers, mst.edges, idx)
+    if layout == "auto":
+        max_degree = max(mst.degree.values()) if mst.degree else 0
+        is_chain = max_degree <= 2          # a path graph has no branching
+        use_circular = n <= small_threshold or is_chain
+    else:
+        use_circular = (layout == "circular")
+
+    if use_circular:
+        pos = _circular_layout(tickers, mst.edges, idx)
+    else:
+        pos = _spring_layout(tickers, mst.edges, idx)
 
     edge_traces = []
     max_corr = max((abs(e.correlation) for e in mst.edges), default=1.0)
@@ -172,6 +193,49 @@ def plot_mst_network(mst, title: str = "Risk topology — Minimum Spanning Tree"
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
     return fig
+
+
+def _circular_layout(nodes, edges, idx) -> dict:
+    """
+    Ring layout. Nodes are ordered around the circle by a depth-first traversal
+    of the tree starting from a leaf, so that tree-adjacent nodes are also
+    circle-adjacent — this keeps edges short and avoids the diagonal collapse
+    that a force-directed layout produces on small/chain graphs.
+    """
+    import numpy as np
+
+    # Build adjacency
+    adj: dict = {t: [] for t in nodes}
+    for e in edges:
+        adj[e.source].append(e.target)
+        adj[e.target].append(e.source)
+
+    # Start from a leaf (degree 1) if one exists, else the first node
+    start = next((t for t in nodes if len(adj[t]) == 1), nodes[0])
+
+    # DFS ordering
+    order, seen = [], set()
+    stack = [start]
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        order.append(node)
+        for nb in sorted(adj[node], key=lambda x: len(adj[x])):
+            if nb not in seen:
+                stack.append(nb)
+    # Append any disconnected nodes (shouldn't happen for an MST)
+    for t in nodes:
+        if t not in seen:
+            order.append(t)
+
+    n = len(order)
+    pos = {}
+    for k, t in enumerate(order):
+        angle = 2 * np.pi * k / n - np.pi / 2   # start at top
+        pos[t] = (float(np.cos(angle)), float(np.sin(angle)))
+    return pos
 
 
 def _spring_layout(nodes, edges, idx, iterations: int = 200, seed: int = 42) -> dict:
