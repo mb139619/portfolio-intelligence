@@ -104,8 +104,10 @@ def estimate_factor_model(
     residuals = results.resid
     idio_vol = float(np.std(residuals, ddof=len(params)) * np.sqrt(periods_per_year))
 
-    # Annualise alpha geometrically
-    alpha_ann = float((1 + alpha) ** periods_per_year - 1)
+    # Annualise alpha arithmetically: alpha is a daily regression intercept, not
+    # a compounding return. alpha * ppy is the standard convention (and it makes
+    # the return attribution reconcile exactly — see attribution.py).
+    alpha_ann = float(alpha * periods_per_year)
 
     return FactorModel(
         factor_names=aligned.factor_names,

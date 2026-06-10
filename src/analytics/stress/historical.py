@@ -151,5 +151,8 @@ def run_historical_factor(
         window=f"{scenario.start} → {scenario.end}",
         max_drawdown=mdd,
         note="systematic PnL only (current betas × historical factor moves); "
-             "per-factor contributions are arithmetic (sum to ~total).",
+             "per-factor contributions are arithmetic (sum to ~total). "
+             "CAVEAT: betas are full-sample and assumed constant — in real "
+             "crises betas and correlations typically rise (correlation "
+             "breakdown), so this likely UNDERSTATES the true loss.",
     )

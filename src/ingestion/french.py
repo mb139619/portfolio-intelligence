@@ -26,9 +26,20 @@ from src.ingestion.http import get_with_retry
 BASE = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 
 DATASET_FILES = {
+    # --- US factors ---
     "FF3": "F-F_Research_Data_Factors_daily_CSV.zip",
     "FF5": "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
     "MOM": "F-F_Momentum_Factor_daily_CSV.zip",
+    # --- Developed / global factors ---
+    # Use these for portfolios with material non-US exposure (e.g. EFA/EAFE):
+    # regressing a global allocation on US-only factors is a defensible
+    # approximation (global equity is highly correlated with US Mkt) but the
+    # benchmark is conceptually US. These give the right opportunity set.
+    # NOTE: the exact international filenames change occasionally on the French
+    # site — verify against the data library directory if a download 404s.
+    "FF5_DEV": "Developed_5_Factors_Daily_CSV.zip",
+    "FF5_DEV_EX_US": "Developed_ex_US_5_Factors_Daily_CSV.zip",
+    "FF5_EUROPE": "Europe_5_Factors_Daily_CSV.zip",
 }
 
 _DATE_ROW = re.compile(r"^\s*(\d{8})\s*,")

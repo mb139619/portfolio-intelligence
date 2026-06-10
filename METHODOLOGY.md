@@ -10,6 +10,10 @@ $T = 252$ trading days; the default risk-free rate is configurable
 
 > Equations render via LaTeX/MathJax on GitHub and in most Markdown previewers.
 
+Each section carries two extras: a **📖 How to read it** block with the
+interpretive nuance that matters in practice, and a **📚 Key references** box
+pointing to the primary literature.
+
 ---
 
 ## 1. Returns
@@ -32,9 +36,9 @@ portfolio.
 | Metric | Definition |
 |--------|------------|
 | Annualised return | $\left(\prod_t (1+r_t)\right)^{252/T} - 1$ (geometric) |
-| Annualised volatility | $\operatorname{std}(r)\cdot\sqrt{252}$ |
-| Sharpe | $\dfrac{\text{annual return} - r_f}{\text{annual vol}}$ |
-| Sortino | $\dfrac{\text{annual return} - r_f}{\text{downside deviation}}$ |
+| Annualised volatility | $\mathrm{std}(r)\cdot\sqrt{252}$ |
+| Sharpe | $\dfrac{\overline{r-r_f}\,\cdot 252}{\mathrm{std}(r-r_f)\,\sqrt{252}} = \dfrac{\overline{r-r_f}}{\mathrm{std}(r-r_f)}\sqrt{252}$ (arithmetic excess) |
+| Sortino | $\dfrac{\overline{r-r_f}\cdot 252}{\text{downside deviation}}$ |
 | Calmar | $\dfrac{\text{annual return}}{\lvert \text{max drawdown}\rvert}$ |
 | Max drawdown | $\min_t\left(\dfrac{C_t}{\max_{s\le t} C_s} - 1\right)$, with $C_t=\prod_{s\le t}(1+r_s)$ |
 | Historical VaR (95%) | negative of the 5th percentile of returns |
@@ -49,6 +53,20 @@ so they inherit the sample's tail behaviour and say nothing about losses larger
 than anything observed. Ratios assume returns are roughly comparable across time
 (no regime adjustment). Downside deviation uses the risk-free rate as the
 minimum acceptable return.
+
+> **📖 How to read it.** 
+> The Sharpe ratio is a *signal-to-noise* measure, not a
+> return measure: it answers "how much excess return per unit of variability", and it is only comparable across strategies at the same frequency 
+> Sortino replaces total volatility with downside deviation, so it rewards strategies whose volatility is mostly upside; the two diverge most for skewed return streams. 
+>Calmar (return over max drawdown) is a path-dependent cousin that institutional allocators watch because investors redeem on drawdowns, not on variance.
+
+> **📚 Key references**
+> - Sharpe, W. (1966), *Mutual Fund Performance*, Journal of Business.
+> - Sharpe, W. (1994), *The Sharpe Ratio*, Journal of Portfolio Management.
+> - Sortino & Price (1994), *Performance Measurement in a Downside Risk Framework*, J. of Investing.
+> - Lo, A. (2002), *The Statistics of Sharpe Ratios*, Financial Analysts Journal.
+
+**Risk-free convention.** Sharpe and Sortino use the *arithmetic* mean of daily **excess** returns $r_t - r_{f,t}$, annualised — the textbook definition. The risk-free can be a constant annual rate or, preferably, the **actual daily risk-free series** (the French `RF` factor, or FRED Fed Funds): over a sample where rates move from ~0% to ~5%, a constant rate materially distorts the ratio. The geometric annualised return (CAGR) is reported separately as a performance descriptor and is *not* used in the Sharpe numerator.
 
 ---
 
@@ -70,12 +88,33 @@ contributions $\%\text{RC}_i$ sum to 1.
 **Covariance estimators.** `sample` (unbiased), `ledoit_wolf` (shrinkage toward
 a structured target — more stable when observations are scarce relative to the
 number of assets), `ewma` (RiskMetrics, $\lambda = 0.94$ — emphasises recent
-data).
+data, **zero-mean convention**: returns are not demeaned, consistent with the
+RiskMetrics specification and free of any sequential look-ahead from a
+full-sample mean).
 
 **Assumptions / limits.** Risk contributions are a *local* (first-order)
 decomposition: they describe sensitivity at the current weights and are exact
 for variance but assume the covariance is a faithful description of risk
 (elliptical-ish returns). They are not stable through regime shifts.
+
+> **📖 How to read it.** Percent risk contribution answers a question weights
+> cannot: *which positions actually drive portfolio volatility?* An asset can
+> carry a small weight but a large risk share if it is volatile and correlated
+> with the rest (and vice versa). The classic example is a 60/40 portfolio,
+> where equities are ~40% of capital but routinely ~90% of risk — the seed of
+> risk parity. Marginal contribution to risk (MCR) is the *sensitivity*: how
+> portfolio volatility moves if you add a unit of that asset, and it is exactly
+> what you set equal across assets to build an equal-risk-contribution (ERC)
+> portfolio. Shrinkage (Ledoit-Wolf) matters here because risk contributions
+> inherit the instability of the sample covariance: with $N$ assets you estimate
+> $N(N+1)/2$ parameters, and the smallest eigenvalues — which dominate the
+> inverse used in optimisation — are the noisiest.
+
+> **📚 Key references**
+> - Litterman, R. (1996), *Hot Spots and Hedges*, Goldman Sachs (marginal/contribution-to-risk framework).
+> - Ledoit & Wolf (2004), *A Well-Conditioned Estimator for Large-Dimensional Covariance Matrices*, J. of Multivariate Analysis.
+> - Maillard, Roncalli & Teïletche (2010), *The Properties of Equally Weighted Risk Contribution Portfolios*, JPM.
+> - RiskMetrics Technical Document (1996), J.P. Morgan (EWMA, $\lambda=0.94$).
 
 ---
 
@@ -97,13 +136,13 @@ themselves excess / long-short returns from the French library.
   the coefficients are identical to OLS.
 - **Outputs:** $\alpha$ (annualised), per-factor $\beta$ with t-stats and
   p-values, $R^2$ / adjusted $R^2$, and annualised idiosyncratic (residual)
-  volatility.
+  volatility. **Alpha is annualised arithmetically** ($\alpha \times 252$).
 
 ### 4.1 Factor risk decomposition
 
 With factor covariance $\Sigma_f$, total variance splits cleanly:
 
-$$\operatorname{Var}(r) = \underbrace{\beta^\top \Sigma_f\, \beta}_{\text{systematic}} + \underbrace{\operatorname{Var}(\varepsilon)}_{\text{specific}}$$
+$$\mathrm{Var}(r) = \underbrace{\beta^\top \Sigma_f\, \beta}_{\text{systematic}} + \underbrace{\mathrm{Var}(\varepsilon)}_{\text{specific}}$$
 
 Per-factor variance contribution is $\beta_i \,(\Sigma_f\, \beta)_i$, which sums
 exactly to the systematic variance.
@@ -117,11 +156,14 @@ as independent buckets.
 
 ### 4.2 Return attribution
 
-$$\text{contribution}_i = \beta_i \cdot \overline{f_i} \quad\text{(annualised)},
-\qquad \text{residual} \approx \alpha$$
+$$\text{contribution}_i = \beta_i \cdot \overline{f_i}\cdot 252,
+\qquad
+\overline{r_{\text{excess}}}\cdot 252 = \underbrace{\alpha\cdot 252}_{\text{alpha}} + \sum_k \beta_k\,\overline{f_k}\cdot 252$$
 
-This is a first-order attribution and does not perfectly reconcile with
-compounded total return over long windows.
+Because the OLS residual has zero mean, this **reconciles exactly**: alpha plus
+the factor contributions equal the total annualised excess return to machine
+precision. (Using arithmetic, not geometric, annualisation is what preserves the
+identity.)
 
 ### 4.3 Data alignment caveat
 
@@ -130,6 +172,30 @@ before** your price data. `align_factors` performs an inner join on date and
 logs a warning reporting how many recent observations are dropped. The factor
 model is therefore fit on a slightly shorter, slightly older window than the raw
 performance statistics — the two are not directly comparable.
+
+> **📖 How to read it.** The betas are the portfolio's *style fingerprint*. A
+> market beta near 1 with near-zero SMB/HML is a closet index fund; a positive
+> HML is a value tilt, negative is growth; positive SMB is a small-cap tilt. The
+> $R^2$ tells you how much of the return variation is *style* versus security
+> selection — a diversified equity fund often sits at 0.90+, meaning almost
+> everything is factor beta and very little is idiosyncratic skill. **Alpha is
+> the residual that the known factors cannot explain**; its t-stat is the
+> honest question — most apparent alpha is statistically indistinguishable from
+> zero once you account for daily autocorrelation (hence HAC errors). On the
+> risk side, the systematic/specific split is the single most decision-relevant
+> number: specific risk is diversifiable (add more names), systematic risk is
+> not (you must hedge the factor). On the **negative per-factor contributions**:
+> they are a feature of a *correlated* factor set — a long-value, short-growth
+> tilt can have HML and CMA contributions of opposite sign that net to the true
+> systematic variance. Read them as covariance-aware, not as standalone buckets;
+> if you need orthogonal buckets, rotate the factors first.
+
+> **📚 Key references**
+> - Fama & French (1993), *Common Risk Factors in the Returns on Stocks and Bonds*, JFE (3-factor).
+> - Fama & French (2015), *A Five-Factor Asset Pricing Model*, JFE (adds RMW, CMA).
+> - Carhart (1997), *On Persistence in Mutual Fund Performance*, J. of Finance (momentum).
+> - Newey & West (1987), *A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix*, Econometrica.
+> - Sharpe, W. (1992), *Asset Allocation: Management Style and Performance Measurement*, JPM (returns-based style analysis).
 
 ---
 
@@ -144,7 +210,7 @@ $$M = V \Lambda V^\top$$
 - Eigenvectors (loadings) are sign-fixed so each PC's largest-magnitude loading
   is positive — making PC1 typically all-positive (a market/level direction)
   and keeping signs stable across refits.
-- Scores (PC time series) satisfy $\operatorname{Var}(\text{score}_i) = \lambda_i$
+- Scores (PC time series) satisfy $\mathrm{Var}(\text{score}_i) = \lambda_i$
   for covariance PCA.
 
 **Covariance vs correlation.** Covariance PCA preserves actual risk magnitudes
@@ -154,6 +220,25 @@ very different volatilities and you care about co-movement, not magnitude).
 **Assumptions / limits.** PCA factors are statistical, not economic — they have
 no inherent interpretation beyond "directions of common variation", and their
 identity can rotate between samples when eigenvalues are close.
+
+> **📖 How to read it.** In almost every cross-asset universe the **first PC is
+> the market/level factor** — it has all-positive loadings and explains the lion's
+> share of variance (often 70–90% for equities). Subsequent PCs are *spreads*:
+> PC2 frequently separates duration/defensives from cyclicals, PC3 a regional or
+> sector axis, and so on. The **scree plot** answers "how many independent bets
+> does this universe really contain?" — if three PCs explain 95%, a 30-name
+> portfolio has roughly three degrees of freedom. **Eigen-portfolios** (the
+> eigenvectors read as weights) are mutually uncorrelated by construction, which
+> is why PCA underlies statistical-arbitrage and the latent-factor risk models of
+> Barra/Axioma. The interpretive trap is *eigenvalue crowding*: when two
+> eigenvalues are close their eigenvectors are nearly unidentified and will swap
+> or rotate between samples, so never over-interpret a single mid-spectrum PC.
+
+> **📚 Key references**
+> - Connor & Korajczyk (1986), *Performance Measurement with the Arbitrage Pricing Theory*, JFE (PCA / approximate factor models).
+> - Litterman & Scheinkman (1991), *Common Factors Affecting Bond Returns*, J. of Fixed Income (level/slope/curvature PCs).
+> - Laloux, Cizeau, Bouchaud & Potters (1999), *Noise Dressing of Financial Correlation Matrices*, PRL (random-matrix view of which PCs are signal).
+> - Avellaneda & Lee (2010), *Statistical Arbitrage in the US Equities Market*, Quantitative Finance (eigen-portfolios).
 
 ---
 
@@ -181,6 +266,24 @@ A large gap between the two signals hidden concentration.
 Meucci's *minimum-torsion* basis can give more stable bets; PCA is used here for
 transparency. ENB is a point-in-time, covariance-based diagnostic.
 
+> **📖 How to read it.** The number of holdings and even the weight-based
+> diversification (inverse Herfindahl) can lie: ten equally-weighted tech names
+> look like ten bets but are effectively one. The **effective number of bets**
+> measures diversification in *risk* space rather than *capital* space. Read the
+> gap, not the level: $\mathrm{ENB}_{\text{weights}} = 10$ with
+> $\mathrm{ENB}_{\text{risk}} = 1.5$ is the signature of hidden concentration —
+> the portfolio is one macro bet wearing the costume of diversification. The
+> entropy formulation rewards *spreading risk evenly across uncorrelated
+> directions*, which is exactly what a genuinely diversified book does. The
+> caveat worth stating aloud in an interview: ENB depends on the basis you
+> decompose in (here PCA); Meucci's minimum-torsion basis stays closest to the
+> original assets and tends to give more stable, more interpretable bets.
+
+> **📚 Key references**
+> - Meucci, A. (2009), *Managing Diversification*, Risk (the effective-number-of-bets / entropy framework).
+> - Meucci, Santangelo & Deguest (2015), *Risk Budgeting and Diversification Based on Optimal Risk Factors* (minimum-torsion bets).
+> - Choueifaty & Coignard (2008), *Toward Maximum Diversification*, JPM (the diversification ratio, a related lens).
+
 ---
 
 ## 7. Correlation analytics
@@ -206,6 +309,26 @@ $$d_{ij} = \sqrt{2\,(1 - \rho_{ij})}$$
 misses non-linear dependence and tail co-movement. The MST hub/leaf reading is
 most meaningful for larger universes.
 
+> **📖 How to read it.** Average pairwise correlation is a **systemic-stress
+> gauge**: in calm regimes assets disperse (low average correlation, real
+> diversification), but in crises everything moves together and the average
+> spikes toward 1 — diversification evaporates exactly when you need it. The
+> **clustered heatmap** turns a noisy matrix into visible blocks (equities,
+> rates, commodities); the quasi-diagonal order is the same seriation that
+> Hierarchical Risk Parity uses to avoid inverting an unstable covariance. The
+> **Minimum Spanning Tree** is the cleanest one-picture summary of the risk
+> network: it keeps only the strongest link per node, so *hubs* (high degree)
+> are the systemic assets the rest of the book hangs off — shock the hub and the
+> whole tree moves — while *leaves* are the genuine diversifiers. Empirically the
+> tree contracts (shorter total length, more star-like around a single hub)
+> during crises, which is itself a regime signal.
+
+> **📚 Key references**
+> - Mantegna, R. (1999), *Hierarchical Structure in Financial Markets*, European Physical Journal B (the asset tree / MST).
+> - Onnela, Chakraborti, Kaski, Kertész & Kanto (2003), *Dynamic Asset Trees and Black Monday*, Physica A (tree length as a crisis indicator).
+> - Tumminello, Aste, Di Matteo & Mantegna (2005), *A Tool for Filtering Information in Complex Systems*, PNAS (PMFG, the MST's richer cousin).
+> - López de Prado (2016), *Building Diversified Portfolios that Outperform Out of Sample*, JPM (clustering / quasi-diagonalisation → HRP).
+
 ---
 
 ## 8. Stress testing
@@ -214,8 +337,10 @@ most meaningful for larger universes.
 Apply the portfolio's **current** factor betas to the factor returns of a real
 crisis window. Because Fama-French factors reach back to 1926, this covers
 crises that predate your instruments (e.g. 2008). It captures the **systematic**
-PnL only — by construction it excludes idiosyncratic moves and alpha, so it
-slightly understates the realised loss of a concentrated portfolio.
+PnL only — by construction it excludes idiosyncratic moves and alpha. Moreover
+the betas are **full-sample and assumed constant**, whereas in real crises betas
+and correlations typically rise (correlation breakdown). Both effects mean the
+figure most likely **understates** the true loss; treat it as a lower bound.
 
 ### 8.2 Asset-based historical replay
 Apply current weights to the actual asset returns over the window. Requires the
@@ -254,3 +379,22 @@ co-movement, which may not hold in a genuine shock.
 - **Point-in-time vs revised data.** FRED/ECB series may be revised; the
   platform stores the latest values, not the data as known at the time.
 - **Not investment advice.** All outputs are for research and education.
+
+---
+
+## 10. General references & further reading
+
+Textbooks that cover the whole pipeline and are the standard desk references:
+
+- **Grinold & Kahn (2000), *Active Portfolio Management*** — the canonical text on factor models, the fundamental law of active management, and risk attribution.
+- **Meucci, A. (2005), *Risk and Asset Allocation*, Springer** — rigorous treatment of estimation, risk decomposition, and diversification.
+- **McNeil, Frey & Embrechts (2015), *Quantitative Risk Management*, Princeton** — VaR/ES, EVT, copulas, coherent risk measures.
+- **Ang, A. (2014), *Asset Management: A Systematic Approach to Factor Investing*, Oxford** — the modern factor-investing perspective.
+- **López de Prado (2018), *Advances in Financial Machine Learning*, Wiley** — HRP, backtesting pitfalls, and the look-ahead / in-sample discipline.
+
+> **A note on scope.** Everything in this platform is **descriptive and
+> in-sample**: it characterises the risk of a portfolio given a history. None of
+> it is a forecasting model or a backtested strategy. Turning any of these
+> diagnostics into a tradeable signal requires re-deriving them point-in-time
+> (expanding/rolling windows that use only past data) to avoid look-ahead — a
+> deliberate boundary, not an oversight.

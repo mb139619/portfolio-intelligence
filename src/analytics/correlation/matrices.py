@@ -42,12 +42,19 @@ def correlation_matrix(rs: ReturnSeries, method: str = "pearson") -> np.ndarray:
 
 
 def ewma_covariance(R: np.ndarray, lam: float = 0.94) -> np.ndarray:
-    """Exponentially weighted covariance matrix (daily, not annualised)."""
+    """
+    Exponentially weighted covariance matrix (daily, not annualised).
+
+    Uses the RiskMetrics ZERO-MEAN convention: no demeaning. For daily returns
+    the mean is tiny (~5e-4) and noisy, and subtracting a full-sample mean inside
+    an estimator designed to up-weight recent data is both inconsistent and, in
+    any sequential/point-in-time use, a source of look-ahead. Assuming a zero
+    mean removes both problems and matches the RiskMetrics specification.
+    """
     T = R.shape[0]
-    excess = R - R.mean(axis=0)
     w = np.array([(1 - lam) * lam ** i for i in range(T - 1, -1, -1)])
     w /= w.sum()
-    return np.einsum("t,ti,tj->ij", w, excess, excess)
+    return np.einsum("t,ti,tj->ij", w, R, R)
 
 
 def correlation_from_covariance(cov: np.ndarray) -> np.ndarray:

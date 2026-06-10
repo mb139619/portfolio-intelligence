@@ -59,12 +59,9 @@ def covariance_matrix(rs: ReturnSeries, method: str = "sample", ppy: int = 252) 
         from sklearn.covariance import LedoitWolf
         return LedoitWolf().fit(R).covariance_ * ppy
     if method == "ewma":
-        lam = 0.94
-        T = R.shape[0]
-        excess = R - R.mean(axis=0)
-        w = np.array([(1 - lam) * lam ** i for i in range(T - 1, -1, -1)])
-        w /= w.sum()
-        return np.einsum("t,ti,tj->ij", w, excess, excess) * ppy
+        # Single source of truth: RiskMetrics zero-mean EWMA (see matrices.py)
+        from src.analytics.correlation.matrices import ewma_covariance
+        return ewma_covariance(R, lam=0.94) * ppy
     raise ValueError(f"Unknown covariance method: {method}")
 
 

@@ -84,7 +84,16 @@ print(rs)
 # %%
 import numpy as np
 port_returns = rs.portfolio_returns(portfolio.weights).to_numpy()
-metrics = compute_metrics(port_returns, rfr=settings.risk_free_rate)
+
+# Use the REAL daily risk-free series (French 'RF'), not a constant.
+# We align it to the portfolio returns by date; Sharpe/Sortino are then computed
+# on genuine excess returns — important when rates move across the sample.
+from src.analytics.performance import align_risk_free, compute_metrics
+rf_wide = store.read_factors(["RF"])
+r_aligned, rf_daily, _ = align_risk_free(
+    rs.portfolio_returns(portfolio.weights), rs.dates, rf_wide
+)
+metrics = compute_metrics(r_aligned, rf=rf_daily)
 print(metrics.summary())
 
 # Equity curve + drawdown (from the reusable viz module)
