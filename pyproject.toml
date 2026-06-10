@@ -1,0 +1,59 @@
+[project]
+name = "portfolio-intelligence"
+version = "0.1.0"
+description = "Portfolio analytics platform on open data — notebook-driven"
+requires-python = ">=3.11"
+
+dependencies = [
+    # Data sources
+    "yfinance>=0.2.40",
+    "requests>=2.32.0",
+    # Storage & processing
+    "duckdb>=1.1.0",
+    "polars>=1.0.0",
+    "pyarrow>=17.0.0",
+    "pandas>=2.0.0",
+    # Numerics
+    "numpy>=2.0.0",
+    "scipy>=1.14.0",
+    "statsmodels>=0.14.0",
+    "scikit-learn>=1.5.0",
+    # Config & logging
+    "pydantic-settings>=2.5.0",
+    "loguru>=0.7.0",
+    # Notebook + plotting
+    "jupyterlab>=4.2.0",
+    "plotly>=5.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.0",
+    "jupytext>=1.16.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# The importable package is `src` (we use `from src.xxx import ...`).
+# Tell hatchling to package that directory so `pip install -e .` works
+# and `import src` resolves from any working directory (notebooks included).
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Pair .py notebooks with .ipynb automatically
+[tool.jupytext]
+formats = "ipynb,py:percent"
