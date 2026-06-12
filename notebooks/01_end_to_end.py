@@ -461,8 +461,8 @@ print("Per-regime average correlation:")
 print(regime_conditional_avg_correlation(rs_valid, states_v, regime_model.labels))
 
 # %% [markdown]
-# **How to read this (honestly).** The robust, unambiguous effect is
-# **volatility**: it roughly doubles from the calm to the stress regime, and the
+# The robust, unambiguous effect is **volatility**: it roughly doubles from the calm 
+# to the stress regime, and the
 # return/vol ratio flips from strongly positive to negative — the portfolio is a
 # different animal in stress. **Beta and correlation, however, barely move here**
 # (beta even ticks *down* slightly). That is not a bug, it is a real and
@@ -477,9 +477,7 @@ print(regime_conditional_avg_correlation(rs_valid, states_v, regime_model.labels
 #   room to climb. The "diversification breaks down in crises" effect is much
 #   sharper on broad, genuinely cross-asset universes.
 #
-# The lesson worth stating in an interview: a regime tool tells you what *did*
-# change, and being able to read a result that doesn't confirm the headline is
-# more valuable than forcing the narrative.
+
 
 # %% [markdown]
 # ### Baseline cross-check — volatility states
