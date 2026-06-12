@@ -315,3 +315,177 @@ fig = px.bar(sdf, x="pnl", y="scenario", color="type", orientation="h",
              title="Stress test — PnL per scenario", text_auto=".1%")
 fig.update_xaxes(tickformat=".0%")
 fig.show()
+
+# %% [markdown]
+# ## 12. Regime Detection
+#
+# Two approaches: a Gaussian **hidden Markov model** (primary) and a
+# **volatility-state baseline**. The regime is estimated on the broad MARKET
+# (Mkt-RF) — a regime is a property of the market environment, which the
+# portfolio inherits. We then condition the portfolio's analytics on the regime
+# to show that beta and correlation are NOT stationary.
+
+# %%
+from src.analytics.regime.hmm import fit_regimes
+from src.analytics.regime.volatility_states import volatility_states
+from src.analytics.regime.conditional import (
+    regime_conditional_stats, regime_conditional_beta,
+    regime_conditional_avg_correlation, align_states_to_returns,
+)
+
+# Estimate regimes on the market factor (deep, broad, systematic)
+mkt = store.read_factors(["Mkt-RF"]).drop_nulls().sort("date")
+mkt_ret = mkt["Mkt-RF"].to_numpy()
+mkt_dates = mkt["date"].to_list()
+
+regime = fit_regimes(mkt_ret, mkt_dates, n_states=2, search_reps=20)
+print(regime.summary())
+print()
+print("Transition matrix (row-stochastic):")
+print(regime.transition_matrix.round(3))
+
+# Baseline for comparison
+vs = volatility_states(mkt_ret, mkt_dates, window=21, n_states=2)
+print()
+print(vs.summary())
+
+# %% [markdown]
+# ### Regime timeline — market shaded by detected state
+
+# %%
+from src.viz.plots import plot_regime_timeline
+plot_regime_timeline(mkt_ret, mkt_dates, regime.states, regime.labels,
+                     title="Market (Mkt-RF) with detected stress regimes").show()
+
+# %% [markdown]
+# ### The payoff: portfolio analytics CONDITIONED on regime
+# Beta and average correlation should both rise in the stress regime — the
+# empirical counterpart of the stress-testing caveat.
+
+# %%
+# Align market-estimated regimes onto the portfolio return calendar
+port_states = align_states_to_returns(mkt_dates, regime.states, rs.dates)
+valid = port_states >= 0
+
+port_r = rs.portfolio_returns(portfolio.weights).to_numpy()[valid]
+states_v = port_states[valid]
+rs_v = rs  # for correlation we re-slice inside via the mask below
+
+print("Per-regime portfolio stats:")
+print(regime_conditional_stats(port_r, states_v, regime.labels))
+
+# Regime-conditional market beta (portfolio vs Mkt, excess ~ returns here)
+mkt_aligned = align_states_to_returns(mkt_dates, np.arange(len(mkt_dates)), rs.dates)  # index map
+# Build market series aligned to portfolio dates via join
+mkt_df = mkt.rename({"Mkt-RF": "mkt"})
+port_df = pl.DataFrame({"date": rs.dates, "port": rs.portfolio_returns(portfolio.weights)})
+joined = port_df.join(mkt_df.select(["date", "mkt"]), on="date", how="inner").drop_nulls()
+js = align_states_to_returns(mkt_dates, regime.states, joined["date"])
+jv = js >= 0
+print()
+print("Regime-conditional market beta:")
+print(regime_conditional_beta(joined["port"].to_numpy()[jv], joined["mkt"].to_numpy()[jv],
+                              js[jv], regime.labels))
+
+# Regime-conditional average correlation across the universe
+from src.domain.returns import ReturnSeries
+rs_masked = ReturnSeries(rs.data.filter(pl.Series(valid)), rs.tickers)
+print()
+print("Regime-conditional average correlation:")
+print(regime_conditional_avg_correlation(rs_masked, states_v, regime.labels))
+
+# %% [markdown]
+# ## 12. Regime Detection
+#
+# A Gaussian Markov-switching model (Hamilton) fit on the **broad market**
+# (Mkt-RF) identifies hidden calm/stress regimes. The payoff is **regime-
+# conditional risk**: how the portfolio's behaviour differs across regimes. The
+# robust effect is volatility (it roughly doubles in stress); beta and
+# correlation *can* rise too, but whether they do depends on the portfolio — see
+# the interpretation below, which is a good example of reading a result honestly
+# rather than forcing it to fit the headline.
+
+# %%
+from src.analytics.regime.hmm import fit_regimes
+from src.analytics.regime.volatility_states import volatility_states
+from src.analytics.regime.conditional import (
+    regime_conditional_stats, regime_conditional_beta,
+    regime_conditional_avg_correlation, align_states_to_returns,
+)
+
+# Fit on the market factor (deep history, the environment everyone inherits)
+mkt = factor_wide.select(["date", "Mkt-RF"]).drop_nulls()
+regime_model = fit_regimes(mkt["Mkt-RF"].to_numpy(), mkt["date"].to_list(), n_states=2)
+print(regime_model.summary())
+
+# %% [markdown]
+# ### Regime timeline — smoothed probability of the stress state
+
+# %%
+import plotly.graph_objects as go
+stress_idx = regime_model.labels.index("stress")
+fig = go.Figure(go.Scatter(
+    x=regime_model.dates, y=regime_model.smoothed_probs[:, stress_idx],
+    fill="tozeroy", line=dict(color="#C44E52"),
+))
+fig.update_layout(title="P(stress regime) over time", yaxis_title="probability",
+                  yaxis_range=[0, 1])
+fig.show()
+
+# %% [markdown]
+# ### Regime-conditional risk — the payoff
+# Map the market regimes onto the portfolio calendar (inner-join on date, so the
+# regime frequencies here match the overlapping window, not the full market
+# history), then recompute risk WITHIN each regime.
+
+# %%
+# Align market-estimated states onto the portfolio's return dates
+states_aligned = align_states_to_returns(regime_model.dates, regime_model.states, rs.dates)
+valid = states_aligned >= 0
+
+port_r = rs.portfolio_returns(portfolio.weights).to_numpy()[valid]
+states_v = states_aligned[valid]
+rs_valid = ReturnSeries(rs.data.filter(pl.Series(valid)), rs.tickers)
+
+# Build market excess on the SAME aligned window for the conditional beta
+mkt_r = mkt.join(rs.data.select("date"), on="date", how="inner").sort("date")
+mkt_aligned = mkt_r["Mkt-RF"].to_numpy()
+
+print("Per-regime portfolio stats:")
+print(regime_conditional_stats(port_r, states_v, regime_model.labels))
+print()
+print("Per-regime market beta:")
+print(regime_conditional_beta(port_r, mkt_aligned, states_v, regime_model.labels))
+print()
+print("Per-regime average correlation:")
+print(regime_conditional_avg_correlation(rs_valid, states_v, regime_model.labels))
+
+# %% [markdown]
+# **How to read this (honestly).** The robust, unambiguous effect is
+# **volatility**: it roughly doubles from the calm to the stress regime, and the
+# return/vol ratio flips from strongly positive to negative — the portfolio is a
+# different animal in stress. **Beta and correlation, however, barely move here**
+# (beta even ticks *down* slightly). That is not a bug, it is a real and
+# instructive result:
+#
+# - Beta is $\mathrm{cov}(p,m)/\mathrm{var}(m)$. In stress *both* the covariance
+#   and the market variance blow up and largely cancel, so beta can stay flat or
+#   fall even as absolute risk rises. The thing that genuinely explodes is
+#   volatility, not necessarily beta.
+# - Average correlation barely rises because this 5-asset book is already highly
+#   US-equity-driven, so correlation starts high (~0.28) in calm and has little
+#   room to climb. The "diversification breaks down in crises" effect is much
+#   sharper on broad, genuinely cross-asset universes.
+#
+# The lesson worth stating in an interview: a regime tool tells you what *did*
+# change, and being able to read a result that doesn't confirm the headline is
+# more valuable than forcing the narrative.
+
+# %% [markdown]
+# ### Baseline cross-check — volatility states
+# A transparent quantile classifier; if the HMM doesn't add value over this,
+# the extra machinery isn't earning its keep.
+
+# %%
+vs = volatility_states(mkt["Mkt-RF"].to_numpy(), mkt["date"].to_list(), window=21, n_states=2)
+print(vs.summary())

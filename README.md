@@ -113,6 +113,7 @@ Rates are exposed through a **single interface**: you request a logical series (
 | Hidden Concentration Detector | Effective number of bets vs naive diversification        |
 | Correlation     | Rolling/EWMA correlation, clustering, Minimum Spanning Tree            |
 | Stress testing  | Historical replay (any era) + parametric factor/macro shocks          |
+| Regime detection| Gaussian HMM + vol-states baseline; regime-conditional beta/correlation |
 
 See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour and [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the models and assumptions.
 
@@ -122,7 +123,7 @@ See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour and [`docs/METHODOLOGY.md
 
 - **Phase 1 (done)** — ingestion, store, domain model, performance & risk decomposition
 - **Phase 2 (done)** — factor engine, PCA + hidden concentration, correlation analytics, stress testing, viz module
-- **Phase 3 (planned)** — regime detection, network analytics, risk topology map
+- **Phase 3 (in progress)** — regime detection (HMM + vol-states + regime-conditional analytics) done; network analytics, risk topology map
 - **Phase 4 (planned)** — portfolio optimization (mean-variance, risk parity, HRP), API & dashboard
 
 ---

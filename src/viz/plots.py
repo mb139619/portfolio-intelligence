@@ -266,3 +266,49 @@ def _spring_layout(nodes, edges, idx, iterations: int = 200, seed: int = 42) -> 
         p += (disp / length[:, None]) * np.minimum(length, cool)[:, None]
 
     return {nodes[i]: (float(p[i, 0]), float(p[i, 1])) for i in range(n)}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4. Regime timeline — price/equity shaded by detected regime
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_regime_timeline(
+    returns: np.ndarray,
+    dates: list,
+    states: np.ndarray,
+    labels: list,
+    title: str = "Regime timeline",
+) -> go.Figure:
+    """
+    Cumulative growth line with the background shaded by detected regime.
+    The highest-index regime (stress) is shaded most prominently, making the
+    crisis periods visually obvious.
+    """
+    equity = np.cumprod(1 + returns)
+    n_states = len(labels)
+    # Shade bands per contiguous run of the same state
+    shade_colors = {
+        i: f"rgba(196,78,82,{0.06 + 0.16 * i / max(n_states - 1, 1)})"
+        for i in range(n_states)
+    }
+
+    fig = go.Figure()
+    # background regime bands
+    start = 0
+    for i in range(1, len(states) + 1):
+        if i == len(states) or states[i] != states[start]:
+            s = int(states[start])
+            if s > 0:  # don't shade the calm regime
+                fig.add_vrect(
+                    x0=dates[start], x1=dates[i - 1],
+                    fillcolor=shade_colors[s], line_width=0, layer="below",
+                )
+            start = i
+
+    fig.add_trace(go.Scatter(
+        x=dates, y=equity, mode="lines",
+        line=dict(color=PALETTE[0], width=1.6), name="Growth of 1",
+    ))
+    fig = _base_layout(fig, title, height=440)
+    fig.update_layout(showlegend=False)
+    return fig
