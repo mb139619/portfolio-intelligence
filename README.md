@@ -1,6 +1,6 @@
 # Portfolio Intelligence Platform
 
-A near-institutional-grade portfolio analytics and risk platform, built entirely on **free, public data**. The goal is not performance tracking but a deep understanding of where return and risk come from: factor exposures, latent structure, hidden concentration, correlation topology, and behaviour under stress.
+A portfolio analytics and risk platform, built entirely on **free, public data**. The goal is not performance tracking but a deep understanding of where return and risk come from: factor exposures, latent structure, hidden concentration, correlation topology, and behaviour under stress.
 
 Conceptually inspired by systems such as Aladdin, Barra, Axioma and Bloomberg PORT — using only open data sources.
 
