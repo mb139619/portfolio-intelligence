@@ -415,7 +415,70 @@ print(regime_conditional_avg_correlation(rs_masked, states_v, regime.labels))
 # the Markov model above.
 
 # %%
-vs = volatility_states(mkt_ret, mkt_dates, window=21, n_states=2)
+import plotly.graph_objects as go
+stress_idx = regime_model.labels.index("stress")
+fig = go.Figure(go.Scatter(
+    x=regime_model.dates, y=regime_model.smoothed_probs[:, stress_idx],
+    fill="tozeroy", line=dict(color="#C44E52"),
+))
+fig.update_layout(title="P(stress regime) over time", yaxis_title="probability",
+                  yaxis_range=[0, 1])
+fig.show()
+
+# %% [markdown]
+# ### Regime-conditional risk — the payoff
+# Map the market regimes onto the portfolio calendar (inner-join on date, so the
+# regime frequencies here match the overlapping window, not the full market
+# history), then recompute risk WITHIN each regime.
+
+# %%
+# Align market-estimated states onto the portfolio's return dates
+states_aligned = align_states_to_returns(regime_model.dates, regime_model.states, rs.dates)
+valid = states_aligned >= 0
+
+port_r = rs.portfolio_returns(portfolio.weights).to_numpy()[valid]
+states_v = states_aligned[valid]
+rs_valid = ReturnSeries(rs.data.filter(pl.Series(valid)), rs.tickers)
+
+# Build market excess on the SAME aligned window for the conditional beta
+mkt_r = mkt.join(rs.data.select("date"), on="date", how="inner").sort("date")
+mkt_aligned = mkt_r["Mkt-RF"].to_numpy()
+
+print("Per-regime portfolio stats:")
+print(regime_conditional_stats(port_r, states_v, regime_model.labels))
+print()
+print("Per-regime market beta:")
+print(regime_conditional_beta(port_r, mkt_aligned, states_v, regime_model.labels))
+print()
+print("Per-regime average correlation:")
+print(regime_conditional_avg_correlation(rs_valid, states_v, regime_model.labels))
+
+# %% [markdown]
+# The robust, unambiguous effect is **volatility**: it roughly doubles from the calm 
+# to the stress regime, and the
+# return/vol ratio flips from strongly positive to negative — the portfolio is a
+# different animal in stress. **Beta and correlation, however, barely move here**
+# (beta even ticks *down* slightly). That is not a bug, it is a real and
+# instructive result:
+#
+# - Beta is $\mathrm{cov}(p,m)/\mathrm{var}(m)$. In stress *both* the covariance
+#   and the market variance blow up and largely cancel, so beta can stay flat or
+#   fall even as absolute risk rises. The thing that genuinely explodes is
+#   volatility, not necessarily beta.
+# - Average correlation barely rises because this 5-asset book is already highly
+#   US-equity-driven, so correlation starts high (~0.28) in calm and has little
+#   room to climb. The "diversification breaks down in crises" effect is much
+#   sharper on broad, genuinely cross-asset universes.
+#
+
+
+# %% [markdown]
+# ### Baseline cross-check — volatility states
+# A transparent quantile classifier; if the HMM doesn't add value over this,
+# the extra machinery isn't earning its keep.
+
+# %%
+vs = volatility_states(mkt["Mkt-RF"].to_numpy(), mkt["date"].to_list(), window=21, n_states=2)
 print(vs.summary())
 
 # %% [markdown]
