@@ -114,9 +114,30 @@ class TestRetry:
         monkeypatch.setattr(http.requests, "get", flaky_get)
         monkeypatch.setattr(http.time, "sleep", lambda s: None)  # no real waiting
 
-        resp = http.get_with_retry("http://example.com", max_retries=4, backoff=2.0)
+        resp = http.get_with_retry("http://example.com", max_retries=4, retry_delay=0.0)
         assert resp.text == "ok"
         assert calls["n"] == 3
+
+    def test_sends_browser_user_agent(self, monkeypatch):
+        # The default headers must include a non-python User-Agent (WAF fix)
+        import src.ingestion.http as http
+        captured = {}
+
+        class FakeResp:
+            status_code = 200
+            text = "ok"
+            def raise_for_status(self):
+                pass
+
+        def capture_get(url, params=None, headers=None, timeout=None):
+            captured["headers"] = headers
+            return FakeResp()
+
+        monkeypatch.setattr(http.requests, "get", capture_get)
+        http.get_with_retry("http://example.com")
+        ua = captured["headers"]["User-Agent"]
+        assert "python-requests" not in ua.lower()
+        assert "Mozilla" in ua
 
     def test_gives_up_after_max(self, monkeypatch):
         import src.ingestion.http as http

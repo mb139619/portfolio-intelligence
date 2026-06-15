@@ -431,8 +431,16 @@ correlation.
 ## 10. Data quality & general caveats
 
 - **Free data is imperfect.** Yahoo data can contain bad ticks, gaps, and
-  adjustment quirks; the ingester drops null/non-positive adjusted closes but
-  does not perform deep cleaning.
+  adjustment quirks. Beyond the ingester dropping null/non-positive adjusted
+  closes, a dedicated **data-quality layer** (`src/data_quality`) runs after
+  ingestion and flags — without auto-correcting — calendar gaps, return
+  outliers (an unadjusted split shows up as a ~50% daily move), stale price
+  runs (suspended/illiquid names that deflate volatility), short histories,
+  and null/non-positive prices, each with a severity. Outlier severity uses
+  **per-asset-class bands** (a 10% day is routine for crypto, a red flag for a
+  government-bond ETF) combined with a robust median±k·MAD band, and each
+  finding lists the **dates** of the flagged moves so they can be investigated. The philosophy is to
+  surface where to look and let a human decide, exactly as a risk desk would.
 - **Survivorship bias.** The universe is defined statically; delisted
   instruments are not included.
 - **No transaction costs, taxes, or liquidity modelling.**

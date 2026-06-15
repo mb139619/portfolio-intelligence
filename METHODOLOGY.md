@@ -54,17 +54,22 @@ than anything observed. Ratios assume returns are roughly comparable across time
 (no regime adjustment). Downside deviation uses the risk-free rate as the
 minimum acceptable return.
 
-> **📖 How to read it.** 
-> The Sharpe ratio is a *signal-to-noise* measure, not a
-> return measure: it answers "how much excess return per unit of variability", and it is only comparable across strategies at the same frequency 
-> Sortino replaces total volatility with downside deviation, so it rewards strategies whose volatility is mostly upside; the two diverge most for skewed return streams. 
->Calmar (return over max drawdown) is a path-dependent cousin that institutional allocators watch because investors redeem on drawdowns, not on variance.
+> **📖 How to read it.** The Sharpe ratio is a *signal-to-noise* measure, not a
+> return measure: it answers "how much excess return per unit of variability",
+> and it is only comparable across strategies at the same frequency (a daily
+> Sharpe annualised by $\sqrt{252}$ assumes i.i.d. returns — serial correlation
+> inflates it, which is why hedge funds with smoothed returns can show
+> implausibly high Sharpes). Sortino replaces total volatility with downside
+> deviation, so it rewards strategies whose volatility is mostly upside; the two
+> diverge most for skewed return streams. Calmar (return over max drawdown) is a
+> path-dependent cousin that institutional allocators watch because investors
+> redeem on drawdowns, not on variance.
 
 > **📚 Key references**
 > - Sharpe, W. (1966), *Mutual Fund Performance*, Journal of Business.
 > - Sharpe, W. (1994), *The Sharpe Ratio*, Journal of Portfolio Management.
 > - Sortino & Price (1994), *Performance Measurement in a Downside Risk Framework*, J. of Investing.
-> - Lo, A. (2002), *The Statistics of Sharpe Ratios*, Financial Analysts Journal.
+> - Lo, A. (2002), *The Statistics of Sharpe Ratios*, Financial Analysts Journal (the $\sqrt{T}$ / autocorrelation caveat).
 
 **Risk-free convention.** Sharpe and Sortino use the *arithmetic* mean of daily **excess** returns $r_t - r_{f,t}$, annualised — the textbook definition. The risk-free can be a constant annual rate or, preferably, the **actual daily risk-free series** (the French `RF` factor, or FRED Fed Funds): over a sample where rates move from ~0% to ~5%, a constant rate materially distorts the ratio. The geometric annualised return (CAGR) is reported separately as a performance descriptor and is *not* used in the Sharpe numerator.
 
@@ -136,7 +141,7 @@ themselves excess / long-short returns from the French library.
   the coefficients are identical to OLS.
 - **Outputs:** $\alpha$ (annualised), per-factor $\beta$ with t-stats and
   p-values, $R^2$ / adjusted $R^2$, and annualised idiosyncratic (residual)
-  volatility. **Alpha is annualised arithmetically** ($\alpha \times 252$).
+  volatility. **Alpha is annualised arithmetically** ($\alpha \times 252$): it is a regression intercept, not a compounding return.
 
 ### 4.1 Factor risk decomposition
 
@@ -368,17 +373,124 @@ co-movement, which may not hold in a genuine shock.
 
 ---
 
-## 9. Data quality & general caveats
+## 9. Regime detection
+
+Markets alternate between hidden states (calm vs stress) with different mean and
+variance. Two detectors:
+
+**Primary — Gaussian hidden Markov / Markov-switching model.** Each state has its
+own mean and variance, and the state follows a hidden Markov chain:
+
+$$r_t = \mu_{S_t} + e_t, \qquad e_t \sim \mathcal{N}(0, \sigma^2_{S_t}), \qquad
+S_t \in \{1,\dots,K\}\ \text{Markov}$$
+
+Fit by EM (Hamilton filter + Kim smoother) with multiple random restarts to
+avoid local optima. Outputs: smoothed state probabilities, per-state mean and
+volatility, the **row-stochastic** transition matrix
+$P_{ij} = \Pr(S_{t+1}=j \mid S_t=i)$, and expected state durations
+$1/(1-P_{ii})$. States are canonicalised by ascending volatility so state 0 is
+always "calm" and the last state "stress".
+
+**Baseline — volatility states.** Classify each day by trailing realised
+volatility into quantile buckets. No latent model; fast and transparent. It is
+the benchmark the HMM must beat to justify its complexity.
+
+**Where it runs.** Regimes are estimated on the **broad market** (the Mkt-RF
+factor), not on the portfolio: a regime is a property of the market environment.
+The portfolio then *inherits* the labels, and analytics are recomputed per
+regime (`conditional.py`): per-regime return/volatility, market beta, and average
+correlation.
+
+> **📖 How to read it.** The decisive output is the *contrast across regimes*. A
+> well-behaved result shows the stress regime with much higher volatility,
+> negative drift, short expected duration (crises are brief but violent), and low
+> unconditional frequency. The **regime-conditional statistics are the punchline**:
+> volatility roughly doubles in the stress state and the return/vol ratio flips
+> negative — robustly, across portfolios. Market beta and average correlation
+> *often* rise too (diversification weakening when it is most needed, the
+> empirical measurement behind the stress-test caveat), but this is conditional,
+> not automatic: beta is a ratio whose numerator and denominator both inflate in
+> stress, and an already-concentrated book starts highly correlated. Reading
+> whether the effect is present — rather than assuming it — is the skill.
+> The transition matrix's diagonal tells you regime *persistence* (markets stay
+> calm a long time, then cluster volatility); the expected duration is
+> $1/(1-P_{ii})$. Caveat: HMM states are a statistical convenience, not ground
+> truth — two states is the robust default, three can be informative, but more
+> states overfit fast with daily data, and the model is fit in-sample (the
+> smoothed probabilities use the whole series; for a point-in-time signal use the
+> *filtered* probabilities instead).
+
+> **📚 Key references**
+> - Hamilton, J. (1989), *A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle*, Econometrica (the regime-switching model).
+> - Kim, C-J. (1994), *Dynamic Linear Models with Markov-Switching*, J. of Econometrics (the smoother).
+> - Ang & Bekaert (2002), *International Asset Allocation with Regime Shifts*, Review of Financial Studies.
+> - Guidolin & Timmermann (2007), *Asset Allocation under Multivariate Regime Switching*, J. of Economic Dynamics & Control.
+
+---
+
+## 10. Data quality & general caveats
 
 - **Free data is imperfect.** Yahoo data can contain bad ticks, gaps, and
-  adjustment quirks; the ingester drops null/non-positive adjusted closes but
-  does not perform deep cleaning.
+  adjustment quirks. Beyond the ingester dropping null/non-positive adjusted
+  closes, a dedicated **data-quality layer** (`src/data_quality`) runs after
+  ingestion and flags — without auto-correcting — calendar gaps, return
+  outliers (an unadjusted split shows up as a ~50% daily move), stale price
+  runs (suspended/illiquid names that deflate volatility), short histories,
+  and null/non-positive prices, each with a severity. Outlier severity uses
+  **per-asset-class bands** (a 10% day is routine for crypto, a red flag for a
+  government-bond ETF) combined with a robust median±k·MAD band, and each
+  finding lists the **dates** of the flagged moves so they can be investigated. The philosophy is to
+  surface where to look and let a human decide, exactly as a risk desk would.
 - **Survivorship bias.** The universe is defined statically; delisted
   instruments are not included.
 - **No transaction costs, taxes, or liquidity modelling.**
 - **Point-in-time vs revised data.** FRED/ECB series may be revised; the
   platform stores the latest values, not the data as known at the time.
 - **Not investment advice.** All outputs are for research and education.
+
+---
+
+## 9b. Regime detection
+
+A market environment alternates between hidden states with different mean and
+variance. We fit a **Gaussian Markov-switching model** (switching mean *and*
+variance) on a broad market series (the Fama-French $\mathrm{Mkt}\text{-}\mathrm{RF}$ factor):
+
+$$r_t = \mu_{S_t} + \varepsilon_t, \qquad \varepsilon_t \sim \mathcal{N}(0, \sigma^2_{S_t}), \qquad S_t \in \{1, \dots, K\}$$
+
+where $S_t$ is a hidden Markov chain with transition matrix $P$. Estimated by EM
+(Hamilton filter + Kim smoother), with random restarts to guard against local
+optima. States are **canonicalised by ascending volatility** so labels (calm /
+stress) are stable across refits. Expected regime duration is $1/(1 - P_{ii})$.
+
+We fit on the *market*, not the portfolio: a regime is a property of the
+environment, which the portfolio inherits. The payoff is **regime-conditional
+risk** — recomputing volatility, market beta and average correlation within each
+regime. The robust, near-universal effect is **volatility**, which tends to
+roughly double in stress (and the return/vol ratio flips sign). Beta and
+correlation rising in stress is *common but conditional*, not guaranteed: beta is
+$\mathrm{cov}(p,m)/\mathrm{var}(m)$, a ratio whose numerator and denominator both
+inflate in stress and can cancel, so beta may stay flat or fall even as absolute
+risk rises; and a portfolio already dominated by one factor starts highly
+correlated, with little room to climb. When the effect *is* present it is the
+measured counterpart to the stress-testing caveat that constant full-sample betas
+understate crisis losses.
+
+> **📖 How to read it.** The smoothed probability of the stress state is a
+> continuous "thermometer" of market stress, not a binary switch — values between
+> 0 and 1 express genuine uncertainty about the current regime. A transparent
+> volatility-quantile classifier is provided as a baseline: if the Markov model
+> does not add interpretive value over simply asking "are we in the top half of
+> the vol distribution?", the extra machinery is not earning its keep. Two honest
+> limits: the regime label at the very last date is the least reliable (smoothing
+> has no future data yet), and the model is fit in-sample — a point-in-time
+> version would re-estimate on expanding windows.
+
+> **📚 Key references**
+> - Hamilton, J. (1989), *A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle*, Econometrica (the Markov-switching model).
+> - Kim, C-J. (1994), *Dynamic Linear Models with Markov-Switching*, J. of Econometrics (the smoother).
+> - Ang & Bekaert (2002), *International Asset Allocation with Regime Shifts*, Review of Financial Studies.
+> - Guidolin & Timmermann (2007), *Asset Allocation under Multivariate Regime Switching*, JEDC.
 
 ---
 

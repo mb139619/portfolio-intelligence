@@ -1,6 +1,6 @@
 # Portfolio Intelligence Platform
 
-A portfolio analytics and risk platform, built entirely on **free, public data**. The goal is not performance tracking but a deep understanding of where return and risk come from: factor exposures, latent structure, hidden concentration, correlation topology, and behaviour under stress.
+A near-institutional-grade portfolio analytics and risk platform, built entirely on **free, public data**. The goal is not performance tracking but a deep understanding of where return and risk come from: factor exposures, latent structure, hidden concentration, correlation topology, and behaviour under stress.
 
 Conceptually inspired by systems such as Aladdin, Barra, Axioma and Bloomberg PORT — using only open data sources.
 
@@ -42,6 +42,7 @@ portfolio-intelligence/
 │   ├── config.py               # settings (single source of truth)
 │   ├── domain/                 # Portfolio, Position, Asset, ReturnSeries — pure
 │   ├── store/parquet_store.py  # Parquet I/O + DuckDB query engine
+│   ├── data_quality/          # post-ingestion checks (gaps, outliers, stale, gms)
 │   ├── ingestion/              # data source connectors behind one interface
 │   │   ├── base.py             #   abstract ingester
 │   │   ├── yahoo.py            #   prices / OHLCV
@@ -113,6 +114,9 @@ Rates are exposed through a **single interface**: you request a logical series (
 | Hidden Concentration Detector | Effective number of bets vs naive diversification        |
 | Correlation     | Rolling/EWMA correlation, clustering, Minimum Spanning Tree            |
 | Stress testing  | Historical replay (any era) + parametric factor/macro shocks          |
+| Tail risk       | Cornish-Fisher (modified) VaR + EVT peaks-over-threshold (GPD)         |
+| Regime detection| Markov-switching HMM + regime-conditional risk                        |
+| Data quality    | Post-ingestion checks: gaps, dated outliers (per asset class), stale  |
 | Regime detection| Gaussian HMM + vol-states baseline; regime-conditional beta/correlation |
 
 See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour and [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the models and assumptions.
