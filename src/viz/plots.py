@@ -312,3 +312,181 @@ def plot_regime_timeline(
     fig = _base_layout(fig, title, height=440)
     fig.update_layout(showlegend=False)
     return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 5. Rolling volatility — vol clustering a headline number hides
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_rolling_volatility(
+    returns: np.ndarray,
+    dates: list,
+    window: int = 63,
+    ppy: int = 252,
+    title: str = "Rolling volatility (annualised)",
+) -> go.Figure:
+    """
+    Annualised trailing-window volatility of a single return stream, with the
+    full-sample volatility drawn as a reference. Surfaces vol clustering — calm
+    stretches vs stress — that one headline sigma number averages away.
+    """
+    r = np.asarray(returns, dtype=float)
+    n = len(r)
+    if n < window:
+        raise ValueError(f"need at least window={window} points, got {n}")
+
+    roll = np.full(n, np.nan)
+    for i in range(window, n + 1):
+        roll[i - 1] = r[i - window:i].std(ddof=1) * np.sqrt(ppy)
+    full = float(r.std(ddof=1) * np.sqrt(ppy))
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=dates, y=roll, mode="lines", name=f"{window}d rolling",
+        line=dict(color=PALETTE[0], width=1.6),
+    ))
+    fig.add_hline(
+        y=full, line=dict(color=NEGATIVE, width=1, dash="dash"),
+        annotation_text=f"full-sample {full:.1%}", annotation_position="top left",
+    )
+    _base_layout(fig, title)
+    fig.update_yaxes(tickformat=".0%", title="annualised σ", rangemode="tozero")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 6. Risk contribution vs weight — the 'concentrated in risk' tell
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_risk_contribution(
+    decomp,
+    title: str = "Risk contribution vs weight",
+) -> go.Figure:
+    """
+    Per-asset capital weight against percent risk contribution, sorted by %RC.
+    Where the %RC bar overshoots the weight bar, that asset carries more risk
+    than its size implies — the 'diversified on paper, one bet in risk' signal.
+    Takes a RiskDecomposition (uses its public to_dataframe()).
+    """
+    df = decomp.to_dataframe().sort("pct_risk_contribution", descending=True)
+    tickers = df["ticker"].to_list()
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=tickers, x=df["weight"].to_list(), orientation="h",
+        name="weight", marker_color=PALETTE[5],
+    ))
+    fig.add_trace(go.Bar(
+        y=tickers, x=df["pct_risk_contribution"].to_list(), orientation="h",
+        name="% risk contribution", marker_color=PALETTE[1],
+    ))
+    fig.update_layout(barmode="group", legend=dict(orientation="h", y=1.08))
+    _base_layout(fig, title)
+    fig.update_xaxes(tickformat=".0%", title="share of portfolio")
+    fig.update_yaxes(autorange="reversed")  # largest %RC on top
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 7. Return distribution with VaR / CVaR markers
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_var_distribution(
+    returns: np.ndarray,
+    confidence: float = 0.99,
+    title: str | None = None,
+) -> go.Figure:
+    """
+    Histogram of daily returns with VaR/CVaR markers. Gaussian, Cornish-Fisher
+    and historical VaR sit side by side so the gap between a normal assumption
+    and the real (skewed, fat-tailed) loss tail is visible at a glance.
+    """
+    from src.analytics.risk.tail import tail_risk_comparison
+
+    r = np.asarray(returns, dtype=float)
+    comp = tail_risk_comparison(r, confidence=confidence)
+    if title is None:
+        title = f"Return distribution & VaR ({confidence:.0%}, 1-day)"
+
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(
+        x=r, nbinsx=80, marker_color=PALETTE[0], opacity=0.55, name="daily returns",
+    ))
+    # VaR/CVaR are positive losses → drawn at -value on the return axis.
+    markers = [
+        ("Gaussian VaR", comp.get("gaussian_var"), PALETTE[4], "dot"),
+        ("Cornish-Fisher VaR", comp.get("cornish_fisher_var"), PALETTE[3], "dash"),
+        ("Historical VaR", comp.get("historical_var"), NEGATIVE, "solid"),
+        ("Historical CVaR", comp.get("historical_cvar"), "#7A1F22", "solid"),
+    ]
+    for i, (name, val, color, dash) in enumerate(markers):
+        if val is None:
+            continue
+        fig.add_vline(
+            x=-val, line=dict(color=color, width=1.4, dash=dash),
+            annotation_text=name,
+            annotation_position="top" if i % 2 == 0 else "bottom",
+        )
+    _base_layout(fig, title)
+    fig.update_xaxes(tickformat=".1%", title="daily return")
+    fig.update_yaxes(title="frequency")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 8. EVT peaks-over-threshold tail fit (diagnostic)
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_evt_tail(
+    returns: np.ndarray,
+    confidence: float = 0.99,
+    threshold_quantile: float = 0.95,
+    title: str = "EVT tail fit (peaks-over-threshold)",
+) -> go.Figure:
+    """
+    Diagnostic for the POT/GPD fit. The empirical exceedance-survival curve
+    (losses beyond the threshold u, conditional on exceeding u) is plotted on a
+    log y-axis against the fitted GPD survival; a good fit tracks the points into
+    the tail. EVT VaR/CVaR at `confidence` are marked on the loss axis.
+    """
+    from src.analytics.risk.tail import fit_evt_pot
+
+    r = np.asarray(returns, dtype=float)
+    evt = fit_evt_pot(r, confidence=confidence, threshold_quantile=threshold_quantile)
+    xi, beta, u = evt.shape, evt.scale, evt.threshold
+
+    # Reconstruct exceedances exactly as fit_evt_pot does (losses = -returns).
+    losses = -r
+    exceed = np.sort(losses[losses > u] - u)
+    n_u = len(exceed)
+
+    # Empirical conditional survival S(y) = P(L-u > y | L > u), Weibull positions.
+    emp_surv = 1.0 - (np.arange(1, n_u + 1) - 0.5) / n_u
+
+    # Fitted GPD survival over a smooth grid.
+    grid = np.linspace(0.0, exceed.max() * 1.05, 200)
+    if abs(xi) < 1e-8:
+        gpd_surv = np.exp(-grid / beta)
+    else:
+        gpd_surv = np.power(1.0 + xi * grid / beta, -1.0 / xi)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=u + exceed, y=emp_surv, mode="markers", name="empirical",
+        marker=dict(color=PALETTE[0], size=5, opacity=0.7),
+    ))
+    fig.add_trace(go.Scatter(
+        x=u + grid, y=gpd_surv, mode="lines", name=f"GPD fit (ξ={xi:.2f})",
+        line=dict(color=NEGATIVE, width=1.8),
+    ))
+    for name, val, dash in [("EVT VaR", evt.var, "dash"), ("EVT CVaR", evt.cvar, "dot")]:
+        if val is None or not np.isfinite(val):
+            continue
+        fig.add_vline(
+            x=val, line=dict(color="#7A1F22", width=1.2, dash=dash),
+            annotation_text=f"{name} {val:.1%}", annotation_position="top",
+        )
+    _base_layout(fig, title)
+    fig.update_xaxes(tickformat=".1%", title="loss (−return)")
+    fig.update_yaxes(type="log", title="exceedance prob. (cond. L > u)")
+    return fig

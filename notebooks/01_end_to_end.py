@@ -111,8 +111,12 @@ metrics = compute_metrics(r_aligned, rf=rf_daily)
 print(metrics.summary())
 
 # Equity curve + drawdown (from the reusable viz module)
-from src.viz.plots import plot_performance
+from src.viz.plots import plot_performance, plot_rolling_volatility
 plot_performance(port_returns, rs.dates.to_list(), title="Demo 60/40-ish — performance").show()
+
+# Rolling volatility — the vol clustering a single headline sigma averages away
+plot_rolling_volatility(port_returns, rs.dates.to_list(), window=63,
+                        title="Demo 60/40-ish — rolling volatility").show()
 
 # %% [markdown]
 # ## 5. Risk decomposition
@@ -124,6 +128,11 @@ decomp = decompose_risk(portfolio.weights, rs, cov_method="ledoit_wolf")
 print(decomp.summary())
 print()
 print(decomp.to_dataframe())
+
+# Visual: capital weight vs % risk contribution. Where %RC overshoots the
+# weight, that asset carries more risk than its size — the concentration tell.
+from src.viz.plots import plot_risk_contribution
+plot_risk_contribution(decomp, title="Demo — risk contribution vs weight").show()
 
 # %% [markdown]
 # ## 6. Risk evolution over time (rolling %RC)
@@ -141,7 +150,44 @@ fig = px.area(
 fig.show()
 
 # %% [markdown]
-# ## 7. Factor Engine — exposures, systematic risk, attribution
+# ## 7. Tail risk — beyond the Gaussian
+#
+# Historical VaR/CVaR only see the tail that occurred. Two extensions: the
+# Cornish-Fisher (modified) VaR corrects the Gaussian quantile for skewness and
+# kurtosis; Extreme Value Theory (peaks-over-threshold) fits a Generalised
+# Pareto Distribution to the exceedances to model losses beyond the sample.
+# Tail risk is a summary risk statistic, so it lives here next to performance
+# and risk decomposition rather than at the end of the notebook.
+
+# %%
+from src.analytics.risk.tail import tail_risk_comparison, fit_evt_pot
+from src.viz.plots import plot_var_distribution, plot_evt_tail
+
+comp = tail_risk_comparison(port_returns, confidence=0.99)
+print("Tail risk comparison (99%, 1-day):")
+for k, v in comp.items():
+    if v is None:
+        print(f"  {k:20} n/a")
+    elif "shape" in k:
+        print(f"  {k:20} {v:>8.3f}")
+    else:
+        print(f"  {k:20} {v:>8.2%}")
+
+# The whole VaR family on top of the actual return distribution
+plot_var_distribution(port_returns, confidence=0.99).show()
+
+# %% [markdown]
+# ### EVT peaks-over-threshold detail
+# The GPD shape parameter xi summarises tail heaviness (xi > 0 heavy-tailed).
+# The diagnostic plot overlays the fitted GPD survival on the empirical
+# exceedances — a good fit tracks the points into the tail.
+
+# %%
+print(fit_evt_pot(port_returns, confidence=0.99, threshold_quantile=0.95).summary())
+plot_evt_tail(port_returns, confidence=0.99).show()
+
+# %% [markdown]
+# ## 8. Factor Engine — exposures, systematic risk, attribution
 #
 # We regress the portfolio's excess returns on the Fama-French 5 factors.
 # Three key outputs:
@@ -175,7 +221,7 @@ print()
 print(attribute_returns(model, aligned).summary())
 
 # %% [markdown]
-# ## 8. Dynamic Factor Evolution — betas that change over time
+# ## 9. Dynamic Factor Evolution — betas that change over time
 
 # %%
 import plotly.graph_objects as go
@@ -187,7 +233,7 @@ fig.update_layout(title="Rolling 252d factor betas", xaxis_title="date", yaxis_t
 fig.show()
 
 # %% [markdown]
-# ## 9. PCA Risk Model + Hidden Concentration Detector
+# ## 10. PCA Risk Model + Hidden Concentration Detector
 #
 # How many latent factors really drive the portfolio? And is the portfolio
 # as diversified as its weights suggest?
@@ -226,7 +272,7 @@ fig = px.imshow(
 fig.show()
 
 # %% [markdown]
-# ## 10. Correlation Analytics
+# ## 11. Correlation Analytics
 #
 # Static structure (quasi-diagonal heatmap), dynamic (average correlation over
 # time) and topology (MST — Mantegna's asset tree).
@@ -276,7 +322,7 @@ from src.viz.plots import plot_mst_network
 plot_mst_network(mst).show()
 
 # %% [markdown]
-# ## 11. Stress Testing
+# ## 12. Stress Testing
 #
 # Two methodologies: **factor-based historical replay** (current betas ×
 # factor returns over a real crisis — works for any era, even pre-ETF)
@@ -331,7 +377,7 @@ fig.update_xaxes(tickformat=".0%")
 fig.show()
 
 # %% [markdown]
-# ## 12. Regime Detection
+# ## 13. Regime Detection
 #
 # Two approaches: a Gaussian hidden Markov model (Markov-switching, primary) and
 # a volatility-state baseline. The regime is estimated on the broad market
@@ -416,9 +462,9 @@ print(regime_conditional_avg_correlation(rs_masked, states_v, regime.labels))
 
 # %%
 import plotly.graph_objects as go
-stress_idx = regime_model.labels.index("stress")
+stress_idx = regime.labels.index("stress")
 fig = go.Figure(go.Scatter(
-    x=regime_model.dates, y=regime_model.smoothed_probs[:, stress_idx],
+    x=regime.dates, y=regime.smoothed_probs[:, stress_idx],
     fill="tozeroy", line=dict(color="#C44E52"),
 ))
 fig.update_layout(title="P(stress regime) over time", yaxis_title="probability",
@@ -433,7 +479,7 @@ fig.show()
 
 # %%
 # Align market-estimated states onto the portfolio's return dates
-states_aligned = align_states_to_returns(regime_model.dates, regime_model.states, rs.dates)
+states_aligned = align_states_to_returns(regime.dates, regime.states, rs.dates)
 valid = states_aligned >= 0
 
 port_r = rs.portfolio_returns(portfolio.weights).to_numpy()[valid]
@@ -445,13 +491,13 @@ mkt_r = mkt.join(rs.data.select("date"), on="date", how="inner").sort("date")
 mkt_aligned = mkt_r["Mkt-RF"].to_numpy()
 
 print("Per-regime portfolio stats:")
-print(regime_conditional_stats(port_r, states_v, regime_model.labels))
+print(regime_conditional_stats(port_r, states_v, regime.labels))
 print()
 print("Per-regime market beta:")
-print(regime_conditional_beta(port_r, mkt_aligned, states_v, regime_model.labels))
+print(regime_conditional_beta(port_r, mkt_aligned, states_v, regime.labels))
 print()
 print("Per-regime average correlation:")
-print(regime_conditional_avg_correlation(rs_valid, states_v, regime_model.labels))
+print(regime_conditional_avg_correlation(rs_valid, states_v, regime.labels))
 
 # %% [markdown]
 # The robust, unambiguous effect is **volatility**: it roughly doubles from the calm 
@@ -481,31 +527,3 @@ print(regime_conditional_avg_correlation(rs_valid, states_v, regime_model.labels
 vs = volatility_states(mkt["Mkt-RF"].to_numpy(), mkt["date"].to_list(), window=21, n_states=2)
 print(vs.summary())
 
-# %% [markdown]
-# ## 13. Tail Risk
-#
-# Historical VaR/CVaR only see the tail that occurred. Two extensions: the
-# Cornish-Fisher (modified) VaR corrects the Gaussian quantile for skewness and
-# kurtosis; Extreme Value Theory (peaks-over-threshold) fits a Generalised
-# Pareto Distribution to the exceedances to model losses beyond the sample.
-
-# %%
-from src.analytics.risk.tail import tail_risk_comparison, fit_evt_pot
-
-port_r = rs.portfolio_returns(portfolio.weights).to_numpy()
-comp = tail_risk_comparison(port_r, confidence=0.99)
-print("Tail risk comparison (99%, 1-day):")
-for k, v in comp.items():
-    if v is None:
-        print(f"  {k:20} n/a")
-    elif "shape" in k:
-        print(f"  {k:20} {v:>8.3f}")
-    else:
-        print(f"  {k:20} {v:>8.2%}")
-
-# %% [markdown]
-# ### EVT peaks-over-threshold detail
-# The GPD shape parameter xi summarises tail heaviness (xi > 0 heavy-tailed).
-
-# %%
-print(fit_evt_pot(port_r, confidence=0.99, threshold_quantile=0.95).summary())
