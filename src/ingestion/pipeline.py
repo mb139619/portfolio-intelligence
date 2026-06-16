@@ -76,7 +76,11 @@ class IngestionPipeline:
         if frames:
             import polars as pl
             combined = pl.concat(frames, how="vertical_relaxed")
-            self.store.write_series(combined, "rates", "macro")
+            # Merge, don't overwrite: a failed series (e.g. FRED timing out) must
+            # not wipe the rows we already have for the series that did succeed.
+            self.store.write_series(
+                combined, "rates", "macro", upsert_keys=["date", "series_id"]
+            )
         return results
 
     # --- factors ---
@@ -98,5 +102,7 @@ class IngestionPipeline:
             combined = pl.concat(frames, how="vertical_relaxed").unique(
                 subset=["date", "factor"], keep="last"
             )
-            self.store.write_series(combined, "factors", "factors")
+            self.store.write_series(
+                combined, "factors", "factors", upsert_keys=["date", "factor"]
+            )
         return results

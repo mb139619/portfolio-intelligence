@@ -177,11 +177,31 @@ class ParquetStore:
     # Generic long-format series (rates, factors)
     # ------------------------------------------------------------------
 
-    def write_series(self, df: pl.DataFrame, name: str, subdir: str) -> int:
-        """Write a long-format series file (e.g. rates, factors)."""
+    def write_series(
+        self,
+        df: pl.DataFrame,
+        name: str,
+        subdir: str,
+        upsert_keys: Optional[list[str]] = None,
+    ) -> int:
+        """
+        Write a long-format series file (e.g. rates, factors).
+
+        If ``upsert_keys`` is given and the file already exists, the new rows are
+        MERGED into the existing file (new rows win on key collision) instead of
+        overwriting it. This makes a partial-failure run non-destructive: if one
+        source (e.g. a flaky FRED series) fails, the previously stored rows for
+        the missing series survive instead of being silently wiped.
+        """
         target = (self.base / "raw" / subdir)
         target.mkdir(parents=True, exist_ok=True)
         path = target / f"{name}.parquet"
+        if upsert_keys and path.exists():
+            existing = pl.read_parquet(path)
+            # New data is concatenated last, so keep="last" lets fresh rows win.
+            df = pl.concat([existing, df], how="vertical_relaxed").unique(
+                subset=upsert_keys, keep="last", maintain_order=True
+            )
         df.sort("date").write_parquet(path)
         logger.debug(f"Wrote {len(df)} rows → {subdir}/{name}.parquet")
         return len(df)
