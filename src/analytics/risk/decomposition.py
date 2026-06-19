@@ -51,18 +51,16 @@ class RiskDecomposition:
         return "\n".join(lines)
 
 
-def covariance_matrix(rs: ReturnSeries, method: str = "sample", ppy: int = 252) -> np.ndarray:
-    R = rs.to_numpy()
-    if method == "sample":
-        return np.cov(R, rowvar=False, ddof=1) * ppy
-    if method == "ledoit_wolf":
-        from sklearn.covariance import LedoitWolf
-        return LedoitWolf().fit(R).covariance_ * ppy
-    if method == "ewma":
-        # Single source of truth: RiskMetrics zero-mean EWMA (see matrices.py)
-        from src.analytics.correlation.matrices import ewma_covariance
-        return ewma_covariance(R, lam=0.94) * ppy
-    raise ValueError(f"Unknown covariance method: {method}")
+def covariance_matrix(
+    rs: ReturnSeries, method: str = "sample", ppy: int = 252
+) -> np.ndarray:
+    """
+    Annualised covariance matrix. Thin wrapper over the canonical estimator in
+    risk.covariance so there is a single source of truth; supports the same
+    methods plus "ledoit_wolf_cc" (constant-correlation shrinkage, recommended).
+    """
+    from src.analytics.risk.covariance import estimate_covariance
+    return estimate_covariance(rs, method=method, ppy=ppy, annualize=True).matrix
 
 
 def decompose_risk(weights: dict[str, float], rs: ReturnSeries,

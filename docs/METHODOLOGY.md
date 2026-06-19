@@ -123,7 +123,74 @@ for variance but assume the covariance is a faithful description of risk
 
 ---
 
-## 4. Factor engine
+## 4. Tail risk
+
+Historical VaR and CVaR (Section 2) only see losses that already happened and say
+nothing about anything larger. Three complementary estimators model the tail more
+honestly, each a different bet on what the tail looks like:
+
+| Estimator | Definition |
+|-----------|------------|
+| Gaussian VaR | $-(\mu + \sigma\, z_\alpha)$, with $z_\alpha$ the standard-normal quantile |
+| Cornish-Fisher (modified) VaR | $-(\mu + \sigma\, z_{CF})$, with $z_{CF}$ the moment-adjusted quantile |
+| Historical VaR / CVaR | empirical quantile and mean loss beyond it (Section 2) |
+| EVT (peaks-over-threshold) VaR / CVaR | a GPD fitted to losses beyond a high threshold |
+
+**Cornish-Fisher.** Expand the Gaussian quantile $z$ to correct for the sample's
+skewness $S$ and excess kurtosis $K$:
+
+$$z_{CF} = z + \tfrac{1}{6}(z^2-1)\,S + \tfrac{1}{24}(z^3-3z)\,K - \tfrac{1}{36}(2z^3-5z)\,S^2$$
+
+The modified VaR is then $-(\mu + \sigma\, z_{CF})$, which collapses to the Gaussian
+VaR when $S=K=0$. A cheap, distribution-free correction that uses only the first
+four moments.
+
+**Extreme Value Theory — peaks over threshold.** Fix a high threshold $u$ (here the
+95th percentile of losses) and model the *exceedances* $L-u \mid L>u$ with a
+Generalised Pareto Distribution. The Pickands–Balkema–de Haan theorem makes the GPD
+the limiting law of exceedances for a broad class of loss distributions — which is
+what licenses extrapolating *beyond* the worst observed loss. With $n$ total
+observations, $N_u$ exceedances, shape $\xi$ and scale $\beta$:
+
+$$\mathrm{VaR}_p = u + \frac{\beta}{\xi}\left[\left(\frac{n}{N_u}(1-p)\right)^{-\xi} - 1\right], \qquad
+\mathrm{CVaR}_p = \frac{\mathrm{VaR}_p + \beta - \xi u}{1-\xi}\quad(\xi<1)$$
+
+The shape $\xi$ is the tail index: $\xi>0$ is heavy-tailed (power-law decay),
+$\xi=0$ the exponential (light-tailed) limit, $\xi<0$ a finite upper bound.
+Expected shortfall is finite only for $\xi<1$.
+
+**Assumptions / limits.** Gaussian VaR ignores skew and fat tails and
+systematically *understates* downside risk for real return series — it is kept only
+as the baseline the others improve on. Cornish-Fisher is a fourth-moment expansion:
+reliable for mild non-normality, but the adjusted quantile can turn non-monotone at
+extreme confidence levels and genuine far-tail behaviour exceeds what four moments
+capture. EVT is the principled tail model but is sensitive to the threshold choice
+(a bias/variance trade-off: too low and the non-tail bulk contaminates the fit, too
+high and too few exceedances inflate variance — the fit needs a minimum number of
+exceedances), and the standard POT estimator assumes i.i.d. exceedances, which
+volatility clustering violates (the textbook refinement pre-filters returns through
+a volatility model first; not done here). All three are single-period (1-day) and
+computed in-sample.
+
+> **📖 How to read it.** Lining the four up at the same confidence level makes the
+> cost of the normal assumption explicit: for equity-like returns the historical
+> and EVT VaR sit well below (more negative than) the Gaussian one, and that gap is
+> the fat-tail premium a Gaussian model would have you ignore. Prefer **CVaR
+> (expected shortfall)** as the headline number: unlike VaR it is *coherent*
+> (sub-additive, so it never penalises diversification), which is why bank
+> regulation (FRTB) moved from VaR to ES. The GPD shape $\xi$ is the single most
+> portable summary of tail heaviness — independent of sample size — and for daily
+> equity losses it typically lands around $0.2$–$0.3$ (clearly heavy-tailed).
+
+> **📚 Key references**
+> - McNeil, Frey & Embrechts (2015), *Quantitative Risk Management*, Princeton — the standard treatment of POT/EVT and coherent risk measures.
+> - Embrechts, Klüppelberg & Mikosch (1997), *Modelling Extremal Events*, Springer — the EVT reference.
+> - Artzner, Delbaen, Eber & Heath (1999), *Coherent Measures of Risk*, Mathematical Finance — why ES is preferred to VaR.
+> - Fisher & Cornish (1960), *The Percentile Points of Distributions Having Known Cumulants*, Technometrics — the quantile expansion.
+
+---
+
+## 5. Factor engine
 
 Time-series regression of portfolio **excess** returns on the Fama-French
 factors:
@@ -143,7 +210,7 @@ themselves excess / long-short returns from the French library.
   p-values, $R^2$ / adjusted $R^2$, and annualised idiosyncratic (residual)
   volatility. **Alpha is annualised arithmetically** ($\alpha \times 252$): it is a regression intercept, not a compounding return.
 
-### 4.1 Factor risk decomposition
+### 5.1 Factor risk decomposition
 
 With factor covariance $\Sigma_f$, total variance splits cleanly:
 
@@ -159,7 +226,7 @@ mathematically correct, not a bug: a factor can have negative covariance-weighte
 contribution. Interpret per-factor shares as a covariance-aware attribution, not
 as independent buckets.
 
-### 4.2 Return attribution
+### 5.2 Return attribution
 
 $$\text{contribution}_i = \beta_i \cdot \overline{f_i}\cdot 252,
 \qquad
@@ -170,7 +237,7 @@ the factor contributions equal the total annualised excess return to machine
 precision. (Using arithmetic, not geometric, annualisation is what preserves the
 identity.)
 
-### 4.3 Data alignment caveat
+### 5.3 Data alignment caveat
 
 The French library publishes with a lag, so factor data typically **ends weeks
 before** your price data. `align_factors` performs an inner join on date and
@@ -204,7 +271,7 @@ performance statistics — the two are not directly comparable.
 
 ---
 
-## 5. PCA risk model
+## 6. PCA risk model
 
 Eigendecomposition of the (daily) covariance or correlation matrix:
 
@@ -247,7 +314,7 @@ identity can rotate between samples when eigenvalues are close.
 
 ---
 
-## 6. Hidden Concentration Detector
+## 7. Hidden Concentration Detector
 
 Based on Meucci's *effective number of bets*. Decompose portfolio variance along
 the principal components: with PC exposures $e = V^\top w$,
@@ -291,7 +358,7 @@ transparency. ENB is a point-in-time, covariance-based diagnostic.
 
 ---
 
-## 7. Correlation analytics
+## 8. Correlation analytics
 
 - **Estimators:** Pearson, Spearman (rank, robust to outliers), and an EWMA
   correlation (from the EWMA covariance, $\lambda = 0.94$) for a current-state
@@ -336,9 +403,9 @@ most meaningful for larger universes.
 
 ---
 
-## 8. Stress testing
+## 9. Stress testing
 
-### 8.1 Factor-based historical replay
+### 9.1 Factor-based historical replay
 Apply the portfolio's **current** factor betas to the factor returns of a real
 crisis window. Because Fama-French factors reach back to 1926, this covers
 crises that predate your instruments (e.g. 2008). It captures the **systematic**
@@ -347,17 +414,17 @@ the betas are **full-sample and assumed constant**, whereas in real crises betas
 and correlations typically rise (correlation breakdown). Both effects mean the
 figure most likely **understates** the true loss; treat it as a lower bound.
 
-### 8.2 Asset-based historical replay
+### 9.2 Asset-based historical replay
 Apply current weights to the actual asset returns over the window. Requires the
 assets to have existed; missing assets are dropped and weights renormalised
 (with a warning). Per-asset contributions are approximate due to compounding.
 
-### 8.3 Parametric factor shocks
+### 9.3 Parametric factor shocks
 Exact and additive across factors:
 
 $$\text{PnL} = \sum_i \beta_i \cdot \text{shock}_i$$
 
-### 8.4 Macro shocks (rates / oil / USD / VIX)
+### 9.4 Macro shocks (rates / oil / USD / VIX)
 For variables outside the FF factor set, the portfolio's sensitivity to daily
 moves is estimated by linear regression, then a shock is applied in native units
 (e.g. +100bp $= +0.01$ on the rate series).
@@ -373,7 +440,7 @@ co-movement, which may not hold in a genuine shock.
 
 ---
 
-## 9. Regime detection
+## 10. Regime detection
 
 Markets alternate between hidden states (calm vs stress) with different mean and
 variance. Two detectors:
@@ -428,7 +495,7 @@ correlation.
 
 ---
 
-## 10. Data quality & general caveats
+## 11. Data quality & general caveats
 
 - **Free data is imperfect.** Yahoo data can contain bad ticks, gaps, and
   adjustment quirks. Beyond the ingester dropping null/non-positive adjusted
@@ -450,51 +517,7 @@ correlation.
 
 ---
 
-## 9b. Regime detection
-
-A market environment alternates between hidden states with different mean and
-variance. We fit a **Gaussian Markov-switching model** (switching mean *and*
-variance) on a broad market series (the Fama-French $\mathrm{Mkt}\text{-}\mathrm{RF}$ factor):
-
-$$r_t = \mu_{S_t} + \varepsilon_t, \qquad \varepsilon_t \sim \mathcal{N}(0, \sigma^2_{S_t}), \qquad S_t \in \{1, \dots, K\}$$
-
-where $S_t$ is a hidden Markov chain with transition matrix $P$. Estimated by EM
-(Hamilton filter + Kim smoother), with random restarts to guard against local
-optima. States are **canonicalised by ascending volatility** so labels (calm /
-stress) are stable across refits. Expected regime duration is $1/(1 - P_{ii})$.
-
-We fit on the *market*, not the portfolio: a regime is a property of the
-environment, which the portfolio inherits. The payoff is **regime-conditional
-risk** — recomputing volatility, market beta and average correlation within each
-regime. The robust, near-universal effect is **volatility**, which tends to
-roughly double in stress (and the return/vol ratio flips sign). Beta and
-correlation rising in stress is *common but conditional*, not guaranteed: beta is
-$\mathrm{cov}(p,m)/\mathrm{var}(m)$, a ratio whose numerator and denominator both
-inflate in stress and can cancel, so beta may stay flat or fall even as absolute
-risk rises; and a portfolio already dominated by one factor starts highly
-correlated, with little room to climb. When the effect *is* present it is the
-measured counterpart to the stress-testing caveat that constant full-sample betas
-understate crisis losses.
-
-> **📖 How to read it.** The smoothed probability of the stress state is a
-> continuous "thermometer" of market stress, not a binary switch — values between
-> 0 and 1 express genuine uncertainty about the current regime. A transparent
-> volatility-quantile classifier is provided as a baseline: if the Markov model
-> does not add interpretive value over simply asking "are we in the top half of
-> the vol distribution?", the extra machinery is not earning its keep. Two honest
-> limits: the regime label at the very last date is the least reliable (smoothing
-> has no future data yet), and the model is fit in-sample — a point-in-time
-> version would re-estimate on expanding windows.
-
-> **📚 Key references**
-> - Hamilton, J. (1989), *A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle*, Econometrica (the Markov-switching model).
-> - Kim, C-J. (1994), *Dynamic Linear Models with Markov-Switching*, J. of Econometrics (the smoother).
-> - Ang & Bekaert (2002), *International Asset Allocation with Regime Shifts*, Review of Financial Studies.
-> - Guidolin & Timmermann (2007), *Asset Allocation under Multivariate Regime Switching*, JEDC.
-
----
-
-## 10. General references & further reading
+## 12. General references & further reading
 
 Textbooks that cover the whole pipeline and are the standard desk references:
 

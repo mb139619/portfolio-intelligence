@@ -527,3 +527,100 @@ print(regime_conditional_avg_correlation(rs_valid, states_v, regime.labels))
 vs = volatility_states(mkt["Mkt-RF"].to_numpy(), mkt["date"].to_list(), window=21, n_states=2)
 print(vs.summary())
 
+
+# %% [markdown]
+# ## 14. Portfolio optimization — minimum variance
+#
+# The first optimiser. It consumes a `CovarianceResult` (shrunk Σ — see the
+# covariance estimator) and needs no expected returns, which is what makes it
+# robust relative to full mean-variance. Long-only by default: the w ≥ 0
+# constraint doubles as an implicit regulariser (Jagannathan & Ma 2003).
+
+# %%
+from src.analytics.risk.covariance import estimate_covariance
+from src.analytics.optimization import min_variance
+from src.analytics.risk.decomposition import decompose_risk
+
+# Shrunk covariance over the whole book (constant-correlation Ledoit-Wolf).
+cov = estimate_covariance(rs, method="ledoit_wolf_cc")
+print(cov.summary())
+print()
+
+mv = min_variance(cov)                 # long-only QP
+print(mv.summary())
+
+# %% [markdown]
+# ### Did it earn its keep? Compare to equal weight.
+# The min-variance portfolio should sit below equal weight in expected vol; the
+# risk decomposition shows whether that came at the cost of concentration.
+
+# %%
+import numpy as np
+ew = {t: 1.0 / len(rs.tickers) for t in rs.tickers}
+ew_vol = float(np.sqrt(
+    np.array(list(ew.values())) @ cov.matrix @ np.array(list(ew.values()))
+))
+print(f"Equal-weight   vol (ann.): {ew_vol:>7.2%}")
+print(f"Min-variance   vol (ann.): {mv.expected_volatility:>7.2%}")
+print(f"Reduction               : {1 - mv.expected_volatility / ew_vol:>7.1%}")
+print()
+
+# Where does the min-variance portfolio's risk actually sit?
+decomp = decompose_risk(mv.weights_dict(), rs, cov_method="ledoit_wolf_cc")
+print(decomp.summary())
+plot_risk_contribution(decomp, title="Min-variance — risk contribution vs weight").show()
+
+# %% [markdown]
+# ### Long-short, for contrast
+# Dropping w ≥ 0 enlarges the feasible set (lower vol) but, without shrinkage and
+# leverage limits, produces large offsetting legs that fit Σ's noise. Note the
+# gross exposure.
+
+# %%
+mv_ls = min_variance(cov, long_only=False)
+print(mv_ls.summary())
+
+# %% [markdown]
+# ### Efficient frontier
+# The signature construction chart. It needs expected returns μ — the noisy
+# input min-variance avoids — so here we use annualised historical means purely
+# for illustration. **Caveat:** sample means are a poor return forecast; in
+# practice μ would come from Black-Litterman or explicit views.
+
+# %%
+from src.analytics.optimization import efficient_frontier
+from src.viz.plots import plot_efficient_frontier, plot_weights_comparison
+
+mu = rs.to_numpy().mean(axis=0) * 252            # annualised arithmetic mean (illustrative)
+ef = efficient_frontier(cov, mu, n_points=50)
+
+# A cloud of random long-only portfolios for context
+rng = np.random.default_rng(0)
+W = rng.random((3000, len(rs.tickers)))
+W /= W.sum(axis=1, keepdims=True)
+cloud_vol = np.sqrt(np.einsum("ij,jk,ik->i", W, cov.matrix, W))
+cloud_ret = W @ mu
+
+ew_w = np.full(len(rs.tickers), 1.0 / len(rs.tickers))
+ew_vol = float(np.sqrt(ew_w @ cov.matrix @ ew_w))
+ew_ret = float(ew_w @ mu)
+
+plot_efficient_frontier(
+    ef,
+    assets=(rs.tickers, cov.volatilities, mu),
+    markers=[("equal-weight", ew_vol, ew_ret)],
+    cloud=(cloud_vol, cloud_ret),
+    title="Efficient frontier (μ = historical mean — illustrative)",
+).show()
+
+# %% [markdown]
+# ### Allocations side by side
+# As more optimisers come online (risk parity, HRP, Black-Litterman) they slot
+# straight into this comparison.
+
+# %%
+plot_weights_comparison({
+    "equal-weight": {t: 1.0 / len(rs.tickers) for t in rs.tickers},
+    "min-variance": mv.weights_dict(),
+    "min-var L/S": mv_ls.weights_dict(),
+}, title="Allocation by strategy").show()

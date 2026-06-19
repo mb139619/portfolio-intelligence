@@ -4,16 +4,18 @@ factor-alignment date-gap warning.
 """
 
 import numpy as np
-import polars as pl
 import plotly.graph_objects as go
+import polars as pl
 import pytest
 
-from src.domain.returns import ReturnSeries
-from src.analytics.factors.prepare import align_factors
-from src.analytics.factors.engine import estimate_factor_model
 from src.analytics.correlation.network import build_mst
+from src.analytics.factors.engine import estimate_factor_model
+from src.analytics.factors.prepare import align_factors
+from src.domain.returns import ReturnSeries
 from src.viz.plots import (
-    plot_performance, plot_factor_exposures, plot_mst_network,
+    plot_factor_exposures,
+    plot_mst_network,
+    plot_performance,
 )
 
 
@@ -22,7 +24,8 @@ def _make_rs(R, tickers):
     dates = pl.date_range(pl.date(2020, 1, 1),
                           pl.date(2020, 1, 1) + pl.duration(days=T - 1),
                           interval="1d", eager=True)
-    return ReturnSeries(pl.DataFrame({"date": dates, **{t: R[:, i] for i, t in enumerate(tickers)}}), tickers)
+    cols = {t: R[:, i] for i, t in enumerate(tickers)}
+    return ReturnSeries(pl.DataFrame({"date": dates, **cols}), tickers)
 
 
 @pytest.fixture
@@ -70,7 +73,9 @@ class TestVizFigures:
         F = np.random.normal(0, 0.01, size=(T, 3))
         y = F @ np.array([1.0, -0.3, 0.5]) + np.random.normal(0, 0.003, T)
         from src.analytics.factors.prepare import AlignedFactorData
-        aligned = AlignedFactorData(list(range(T)), y, F, ["Mkt-RF", "SMB", "HML"], np.zeros(T))
+        aligned = AlignedFactorData(
+            list(range(T)), y, F, ["Mkt-RF", "SMB", "HML"], np.zeros(T)
+        )
         model = estimate_factor_model(aligned)
         fig = plot_factor_exposures(model)
         assert isinstance(fig, go.Figure)
@@ -90,8 +95,9 @@ class TestAlignmentWarning:
             "Mkt-RF": np.random.normal(0, 0.01, len(fdates)),
             "RF": np.full(len(fdates), 0.0001),
         })
-        from loguru import logger
         import io
+
+        from loguru import logger
         sink = io.StringIO()
         handler_id = logger.add(sink, level="WARNING")
         align_factors(returns, dates, factor_wide, ["Mkt-RF"])
@@ -111,3 +117,37 @@ class TestAlignmentWarning:
         })
         aligned = align_factors(returns, dates, factor_wide, ["Mkt-RF"])
         assert "obs" in aligned.coverage
+
+
+class TestPortfolioConstructionViz:
+    def test_weights_comparison_builds(self):
+        from src.viz.plots import plot_weights_comparison
+        fig = plot_weights_comparison({
+            "Min-var": {"A": 0.6, "B": 0.3, "C": 0.1},
+            "Equal":   {"A": 1 / 3, "B": 1 / 3, "C": 1 / 3},
+        })
+        assert isinstance(fig, go.Figure)
+        assert len(fig.data) == 2
+
+    def test_efficient_frontier_builds_from_frontier_object(self):
+        from src.analytics.optimization import efficient_frontier
+        from src.viz.plots import plot_efficient_frontier
+
+        rng = np.random.default_rng(0)
+        n = 5
+        tickers = list("ABCDE")
+        vol = np.array([0.10, 0.15, 0.20, 0.25, 0.30])
+        Cf = rng.standard_normal((n, n))
+        C = Cf @ Cf.T
+        d = np.sqrt(np.diag(C))
+        S = np.outer(vol, vol) * (C / np.outer(d, d))
+        mu = np.linspace(0.05, 0.09, n)
+
+        ef = efficient_frontier(S, mu, n_points=20, tickers=tickers)
+        fig = plot_efficient_frontier(
+            ef,
+            assets=(tickers, np.sqrt(np.diag(S)), mu),
+            markers=[("equal-weight", 0.2, 0.07)],
+        )
+        assert isinstance(fig, go.Figure)
+        assert len(fig.data) >= 3

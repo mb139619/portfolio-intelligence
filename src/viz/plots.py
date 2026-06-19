@@ -14,11 +14,8 @@ from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
-import polars as pl
 
-from src.domain.returns import ReturnSeries
 from src.analytics.performance import drawdown_series
-
 
 # --- Shared palette -------------------------------------------------------
 PALETTE = [
@@ -479,7 +476,8 @@ def plot_evt_tail(
         x=u + grid, y=gpd_surv, mode="lines", name=f"GPD fit (ξ={xi:.2f})",
         line=dict(color=NEGATIVE, width=1.8),
     ))
-    for name, val, dash in [("EVT VaR", evt.var, "dash"), ("EVT CVaR", evt.cvar, "dot")]:
+    evt_markers = [("EVT VaR", evt.var, "dash"), ("EVT CVaR", evt.cvar, "dot")]
+    for name, val, dash in evt_markers:
         if val is None or not np.isfinite(val):
             continue
         fig.add_vline(
@@ -489,4 +487,104 @@ def plot_evt_tail(
     _base_layout(fig, title)
     fig.update_xaxes(tickformat=".1%", title="loss (−return)")
     fig.update_yaxes(type="log", title="exceedance prob. (cond. L > u)")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 9. Efficient frontier — the signature portfolio-construction chart
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_efficient_frontier(
+    frontier,
+    assets: tuple[list[str], np.ndarray, np.ndarray] | None = None,
+    markers: list[tuple[str, float, float]] | None = None,
+    cloud: tuple[np.ndarray, np.ndarray] | None = None,
+    title: str = "Efficient frontier",
+) -> go.Figure:
+    """
+    Risk/return frontier (annualised). Optionally overlays:
+      assets  : (names, vols, returns) — the individual holdings,
+      markers : [(name, vol, return), ...] — e.g. min-variance, equal-weight,
+      cloud   : (vols, returns) — a scatter of random feasible portfolios.
+
+    `frontier` is an EfficientFrontier (uses .volatilities and .returns).
+    """
+    fig = go.Figure()
+
+    if cloud is not None:
+        cv, cr = cloud
+        fig.add_trace(go.Scatter(
+            x=cv, y=cr, mode="markers", name="random portfolios",
+            marker=dict(color="rgba(0,0,0,0.12)", size=4),
+            hoverinfo="skip",
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=frontier.volatilities, y=frontier.returns, mode="lines",
+        name="efficient frontier", line=dict(color=PALETTE[0], width=2.4),
+    ))
+    # leftmost frontier point = minimum-variance portfolio
+    if len(frontier.volatilities):
+        i = int(np.argmin(frontier.volatilities))
+        fig.add_trace(go.Scatter(
+            x=[frontier.volatilities[i]], y=[frontier.returns[i]],
+            mode="markers+text", name="min-variance",
+            marker=dict(color=PALETTE[0], size=11, symbol="star"),
+            text=["min-var"], textposition="middle right",
+        ))
+
+    if assets is not None:
+        names, avols, arets = assets
+        fig.add_trace(go.Scatter(
+            x=avols, y=arets, mode="markers+text", name="assets",
+            marker=dict(color=PALETTE[1], size=8, symbol="circle-open"),
+            text=names, textposition="top center", textfont=dict(size=10),
+        ))
+
+    if markers:
+        for j, (name, v, r) in enumerate(markers):
+            fig.add_trace(go.Scatter(
+                x=[v], y=[r], mode="markers+text", name=name,
+                marker=dict(color=PALETTE[(j + 2) % len(PALETTE)], size=11,
+                            symbol="diamond"),
+                text=[name], textposition="bottom center",
+            ))
+
+    _base_layout(fig, title, height=460)
+    fig.update_xaxes(tickformat=".0%", title="annualised volatility")
+    fig.update_yaxes(tickformat=".0%", title="annualised return")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 10. Allocation comparison across strategies
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_weights_comparison(
+    weights_by_strategy: dict[str, dict[str, float]],
+    title: str = "Allocation by strategy",
+) -> go.Figure:
+    """
+    Grouped horizontal bars of portfolio weights, one colour per strategy.
+    Input: {strategy_name: {ticker: weight}}. Handles negative (short) weights.
+    Ticker order follows the first strategy, then any extras.
+    """
+    strategies = list(weights_by_strategy.keys())
+    ordered: list[str] = []
+    for wd in weights_by_strategy.values():
+        for t in wd:
+            if t not in ordered:
+                ordered.append(t)
+
+    fig = go.Figure()
+    for j, strat in enumerate(strategies):
+        wd = weights_by_strategy[strat]
+        fig.add_trace(go.Bar(
+            y=ordered, x=[wd.get(t, 0.0) for t in ordered], orientation="h",
+            name=strat, marker_color=PALETTE[j % len(PALETTE)],
+        ))
+    fig.update_layout(barmode="group", legend=dict(orientation="h", y=1.08))
+    _base_layout(fig, title, height=max(360, 26 * len(ordered) * len(strategies) // 2))
+    fig.update_xaxes(tickformat=".0%", title="weight")
+    fig.update_yaxes(autorange="reversed")
     return fig
