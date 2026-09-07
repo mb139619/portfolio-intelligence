@@ -57,10 +57,20 @@ portfolio-intelligence/
 │   │   ├── pca/                # PCA risk model + Hidden Concentration Detector
 │   │   ├── correlation/        # rolling/EWMA corr, clustering, MST topology
 │   │   └── stress/             # historical replay + parametric shocks
-│   └── viz/plots.py            # reusable Plotly figures
+│   ├── viz/plots.py            # reusable Plotly figures
+│   └── export/                 # portfolio.json -> analytics -> analysis.json
+│       ├── spec.py             #   input contract + validation
+│       ├── encode.py           #   JSON-safe encoding + payload schema
+│       ├── build.py            #   the eight dashboard sections
+│       └── __main__.py         #   CLI
+├── portfolio.json              # the portfolio: universe, weights, parameters
+├── web/                        # static dashboard (no build step, no backend)
+│   ├── index.html, app.js, styles.css
+│   ├── vendor/plotly.min.js
+│   └── data/analysis.json      # the built payload - what a static host serves
 ├── notebooks/01_end_to_end.py  # full walkthrough (jupytext py:percent)
-├── tests/                      # 87 unit tests
-├── docs/                       # USAGE.md, METHODOLOGY.md
+├── tests/                      # 177 unit tests
+├── docs/                       # USAGE.md, METHODOLOGY.md, DASHBOARD.md
 ├── pyproject.toml
 └── requirements.lock           # pinned, reproducible environment
 ```
@@ -80,11 +90,36 @@ pip install -e ".[dev]"
 # Run the test suite
 pytest -q
 
-# Open the notebook (VS Code / JupyterLab opens the .py as a notebook)
+# Build the dashboard and open it in a browser
+python -m src.export --serve
+
+# Or open the notebook (VS Code / JupyterLab opens the .py as a notebook)
 jupyter lab notebooks/01_end_to_end.py
 ```
 
-The first notebook run downloads data from Yahoo / FRED / ECB / French and stores it as Parquet. Subsequent runs reuse the local files (incremental updates).
+The first run downloads data from Yahoo / FRED / ECB / French and stores it as Parquet. Subsequent runs reuse the local files (incremental updates).
+
+---
+
+## Dashboard
+
+Edit `portfolio.json`, run `python -m src.export --serve`, and the whole analysis
+is rendered as a navigable static report. The eight pages read as one argument:
+what the book is (overview), what environment it lives in (factor model, market
+regimes), what its risk properties are (risk decomposition, tail risk, latent
+structure), what breaks it (stress testing), and only then what to do about it
+(portfolio construction).
+
+The pipeline is deliberately offline — `portfolio.json → analytics → analysis.json → static SPA`.
+Nothing computes at view time, so the frontend is a plain static directory that
+any host serves for free, and the universe stays unbounded: ingestion runs
+locally, where Yahoo is reachable and memory is not rationed.
+
+`--standalone` bundles everything into a single self-contained HTML file that
+opens with a double click and needs no server at all.
+
+See [`docs/DASHBOARD.md`](docs/DASHBOARD.md) for the payload schema, the full
+option list and how to add a section.
 
 > **`uv` users:** replace the install steps with `uv venv && uv pip install -e ".[dev]"`.
 
@@ -119,7 +154,7 @@ Rates are exposed through a **single interface**: you request a logical series (
 | Data quality    | Post-ingestion checks: gaps, dated outliers (per asset class), stale  |
 | Regime detection| Gaussian HMM + vol-states baseline; regime-conditional beta/correlation |
 
-See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour and [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the models and assumptions.
+See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour, [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the models and assumptions, and [`docs/DASHBOARD.md`](docs/DASHBOARD.md) for the web report.
 
 ---
 
@@ -127,8 +162,8 @@ See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour and [`docs/METHODOLOGY.md
 
 - **Phase 1 (done)** — ingestion, store, domain model, performance & risk decomposition
 - **Phase 2 (done)** — factor engine, PCA + hidden concentration, correlation analytics, stress testing, viz module
-- **Phase 3 (in progress)** — regime detection (HMM + vol-states + regime-conditional analytics) done; network analytics, risk topology map
-- **Phase 4 (planned)** — portfolio optimization (mean-variance, risk parity, HRP), API & dashboard
+- **Phase 3 (done)** — regime detection (HMM + vol-states + regime-conditional analytics), network analytics, risk topology map
+- **Phase 4 (in progress)** — static dashboard done; portfolio optimization: minimum variance and the efficient frontier done, risk parity and HRP still to come
 
 ---
 
