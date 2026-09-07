@@ -28,6 +28,8 @@ from enum import Enum
 import numpy as np
 import polars as pl
 
+from src.domain.calendar import Calendar
+
 
 class Severity(str, Enum):
     INFO = "info"
@@ -196,11 +198,18 @@ def check_stale_prices(
 
 def check_calendar_gaps(
     df: pl.DataFrame, ticker: str, panel_dates: pl.Series,
+    calendar: Calendar = Calendar.TRADING_DAYS,
     max_report: int = 5,
 ) -> list[QualityFinding]:
     """
-    Trading days present in the panel (union of all tickers) but missing for
-    this ticker — the source of silent misalignment when series are joined.
+    Dates present in the panel but missing for this ticker — the source of
+    silent misalignment when series are joined.
+
+    **The panel must contain only same-calendar tickers.** Compared against a
+    panel that mixes crypto with equities, every equity would be reported as
+    missing ~104 dates a year, which are simply the weekends it was never
+    supposed to trade on. The caller (report.py) groups by calendar for exactly
+    this reason; getting it wrong buries the real findings under noise.
     """
     have = set(df["date"].to_list())
     missing = [d for d in panel_dates.to_list() if d not in have]
@@ -210,6 +219,55 @@ def check_calendar_gaps(
     sample = missing[:max_report]
     return [QualityFinding(
         ticker, "calendar_gaps", sev,
-        f"{len(missing)} panel dates missing for this ticker",
-        {"count": len(missing), "sample": [str(d) for d in sample]},
+        f"{len(missing)} panel dates missing for this ticker "
+        f"(panel: {calendar} assets)",
+        {"count": len(missing), "sample": [str(d) for d in sample],
+         "calendar": str(calendar)},
+    )]
+
+
+def check_observation_gaps(
+    df: pl.DataFrame, ticker: str,
+    calendar: Calendar = Calendar.TRADING_DAYS,
+    max_report: int = 5,
+) -> list[QualityFinding]:
+    """
+    Runs of consecutive calendar days with no observation, judged against what
+    the asset's own calendar makes normal.
+
+    This is the check that only makes sense once the calendar is explicit. A
+    three-day gap is every weekend under TRADING_DAYS and completely
+    unremarkable; the same gap under CONTINUOUS means the venue was down or the
+    pair was delisted, and nothing downstream will tell you that happened.
+    """
+    dates = df.sort("date")["date"].to_list()
+    if len(dates) < 2:
+        return []
+
+    limit = calendar.max_normal_gap_days
+    gaps = []
+    for prev, cur in zip(dates, dates[1:]):
+        delta = (cur - prev).days
+        if delta > limit:
+            gaps.append({"from": str(prev), "to": str(cur), "days": delta})
+
+    if not gaps:
+        return []
+
+    gaps.sort(key=lambda g: -g["days"])
+    worst = gaps[0]
+    # Under a continuous calendar a gap is an outage, which is a data-integrity
+    # problem; under exchange hours it is usually just a market holiday.
+    sev = (Severity.WARNING if calendar is Calendar.CONTINUOUS
+           else Severity.INFO)
+    sample = ", ".join(f"{g['from']}→{g['to']} ({g['days']}d)"
+                       for g in gaps[:max_report])
+    more = "" if len(gaps) <= max_report else f", +{len(gaps) - max_report} more"
+
+    return [QualityFinding(
+        ticker, "observation_gaps", sev,
+        f"{len(gaps)} gaps longer than {limit}d for a {calendar} asset "
+        f"(worst {worst['days']}d); {sample}{more}",
+        {"count": len(gaps), "calendar": str(calendar),
+         "max_normal_gap_days": limit, "gaps": gaps},
     )]

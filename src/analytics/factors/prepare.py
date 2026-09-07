@@ -20,6 +20,8 @@ import numpy as np
 import polars as pl
 from loguru import logger
 
+from src.analytics.calendar_policy import require_trading_days
+from src.domain.calendar import Calendar
 from src.domain.returns import ReturnSeries
 
 
@@ -57,16 +59,30 @@ def align_factors(
     factor_wide: pl.DataFrame,
     factor_names: list[str],
     rf_column: str = RF_COLUMN,
+    calendar: Calendar = Calendar.TRADING_DAYS,
 ) -> AlignedFactorData:
     """
     Inner-join a single return series with factor data on date, and convert
     the asset returns to excess returns (asset - RF).
 
+    **Cross-calendar policy: INTERSECTION, and UNSUPPORTED off exchange hours.**
+    The join itself is an intersection — factor data only exists on US trading
+    days, so a continuously traded asset silently loses its weekends here. That
+    is acceptable for a mixed book but not for a crypto one, where the factors
+    have no meaning at all, so a CONTINUOUS calendar is rejected outright.
+
     asset_returns : the return series (one column), simple returns
     return_dates  : matching dates (pl.Series of Date)
     factor_wide   : wide factor DataFrame (date | Mkt-RF | ... | RF)
     factor_names  : which columns to use as regressors (excludes RF)
+    calendar      : the calendar the return series sits on. Pass `rs.calendar`.
     """
+    require_trading_days(
+        calendar, "The Fama-French factor engine",
+        "The factors are built from US equity portfolios sorted on size, value, "
+        "profitability and investment; a beta of a 24/7 crypto series on HML or "
+        "CMA has no economic referent.",
+    )
     if isinstance(asset_returns, np.ndarray):
         asset_returns = pl.Series("ret", asset_returns)
 

@@ -103,7 +103,7 @@ class CovarianceResult:
 def estimate_covariance(
     rs: ReturnSeries,
     method: str = "ledoit_wolf_cc",
-    ppy: int = 252,
+    ppy: int | None = None,
     annualize: bool = True,
     ewma_lambda: float = 0.94,
     ridge: float = 0.0,
@@ -113,15 +113,24 @@ def estimate_covariance(
 
     method     : one of {"sample", "ledoit_wolf", "ledoit_wolf_cc", "ewma"}.
     annualize  : multiply by `ppy` (covariance scales linearly with horizon).
+    ppy        : observations per year. Defaults to the series' own calendar —
+                 252 for exchange-traded assets, 365 for a continuously traded
+                 one. Annualising a 24/7 series at 252 understates its
+                 volatility by sqrt(365/252) ≈ 20%.
     ridge      : optional λ added to the diagonal (in DAILY units, before
                  annualisation) as a last-resort conditioning guard. Default 0.
     """
+    ppy = rs.periods_per_year if ppy is None else ppy
     R = rs.to_numpy()
-    T = R.shape[0]
+    T, N = R.shape
     shrinkage: float | None = None
 
     if method == "sample":
-        cov = np.cov(R, rowvar=False, ddof=1)
+        # np.cov collapses a single-column input to a 0-d scalar, which then
+        # breaks every consumer that calls np.diag on the result. Reshape so a
+        # one-asset series returns a 1x1 matrix like any other. (The
+        # constant-correlation backend already guards this case explicitly.)
+        cov = np.asarray(np.cov(R, rowvar=False, ddof=1)).reshape(N, N)
     elif method == "ledoit_wolf":
         from sklearn.covariance import LedoitWolf
         lw = LedoitWolf().fit(R)

@@ -113,7 +113,7 @@ def _fix_signs(eigvecs: np.ndarray) -> np.ndarray:
 def fit_pca(
     rs: ReturnSeries,
     method: str = "covariance",
-    ppy: int = 252,
+    ppy: int | None = None,
 ) -> PCARiskModel:
     """
     Fit a PCA risk model on a ReturnSeries.
@@ -124,7 +124,11 @@ def fit_pca(
       "correlation" — PCA on the correlation matrix. Scale-free; useful when
                       assets have very different volatilities and you want to
                       see co-movement structure rather than magnitude.
+
+    ppy defaults to the series' own calendar; it affects only the annualised
+    component volatilities, not the decomposition itself.
     """
+    ppy = rs.periods_per_year if ppy is None else ppy
     R = rs.to_numpy()                      # (T, N)
     T, N = R.shape
     Rd = R - R.mean(axis=0)                # demean

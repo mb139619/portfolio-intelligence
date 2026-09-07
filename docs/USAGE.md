@@ -44,6 +44,50 @@ If a source is slow or blocked (corporate networks sometimes throttle FRED),
 the fetch retries with exponential backoff and then fails gracefully without
 breaking the rest of the run.
 
+### Crypto and other calendars
+
+Crypto is ingested through the same call. The price registry routes the ticker
+to the right backend and records the calendar it trades on:
+
+```python
+pipeline.update_prices(["BTC-USD", "ETH-USD", "SPY"])   # Binance, Binance, Yahoo
+```
+
+```python
+from src.ingestion.prices import PRICE_REGISTRY, available_crypto, resolve
+available_crypto()          # ['BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD']
+resolve("BTC-USD").code     # 'BTC/USDT' — the exchange symbol stays internal
+```
+
+Anything not in the registry falls through to Yahoo on the trading-day
+calendar, so the universe stays open: any symbol Yahoo knows still works
+without a code change.
+
+The calendar then drives annualisation automatically:
+
+```python
+btc   = store.read_returns(["BTC-USD"])                  # 365 obs/year
+mixed = store.read_returns(["BTC-USD", "SPY", "TLT"])    # 252 — intersected
+
+btc.periods_per_year      # 365
+mixed.periods_per_year    # 252
+```
+
+Reading a mixed universe **intersects** — only dates on which every asset
+traded survive — and never forward-fills. Annualising BTC at 252 would
+understate its volatility by 20% (53.5% instead of 64.4%), so the factor comes
+from the data rather than a default.
+
+Analytics that have no meaning off exchange hours refuse rather than return a
+number:
+
+```python
+align_factors(..., calendar=btc.calendar)   # UnsupportedCalendarError
+```
+
+See §12 of `docs/METHODOLOGY.md` for the bar-close offset, the sample-period
+asymmetry, and what the tail parameters actually turn out to be.
+
 ---
 
 ## 3. Querying the store

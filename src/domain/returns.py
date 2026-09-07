@@ -12,12 +12,19 @@ from typing import Optional
 import numpy as np
 import polars as pl
 
+from src.domain.calendar import Calendar
+
 
 @dataclass
 class ReturnSeries:
     data: pl.DataFrame          # columns: date + one per ticker
     tickers: list[str]
     is_log: bool = False
+    # The calendar the ROWS sit on, not the calendar of any one asset. A crypto
+    # pair read on its own is CONTINUOUS; the same pair joined to an equity is
+    # TRADING_DAYS, because the join keeps only the days both actually traded.
+    # Analytics annualise from this instead of assuming 252.
+    calendar: Calendar = Calendar.TRADING_DAYS
 
     def __post_init__(self) -> None:
         if "date" not in self.data.columns:
@@ -29,22 +36,26 @@ class ReturnSeries:
     # --- constructors ---
 
     @classmethod
-    def from_prices(cls, prices: pl.DataFrame) -> "ReturnSeries":
+    def from_prices(
+        cls, prices: pl.DataFrame, calendar: Calendar = Calendar.TRADING_DAYS
+    ) -> "ReturnSeries":
         tickers = [c for c in prices.columns if c != "date"]
         returns = prices.select(
             [pl.col("date")]
             + [(pl.col(t) / pl.col(t).shift(1) - 1).alias(t) for t in tickers]
         ).drop_nulls()
-        return cls(data=returns, tickers=tickers, is_log=False)
+        return cls(data=returns, tickers=tickers, is_log=False, calendar=calendar)
 
     @classmethod
-    def from_log_prices(cls, prices: pl.DataFrame) -> "ReturnSeries":
+    def from_log_prices(
+        cls, prices: pl.DataFrame, calendar: Calendar = Calendar.TRADING_DAYS
+    ) -> "ReturnSeries":
         tickers = [c for c in prices.columns if c != "date"]
         returns = prices.select(
             [pl.col("date")]
             + [(pl.col(t) / pl.col(t).shift(1)).log().alias(t) for t in tickers]
         ).drop_nulls()
-        return cls(data=returns, tickers=tickers, is_log=True)
+        return cls(data=returns, tickers=tickers, is_log=True, calendar=calendar)
 
     # --- accessors ---
 
@@ -66,6 +77,11 @@ class ReturnSeries:
     def n_obs(self) -> int:
         return len(self.data)
 
+    @property
+    def periods_per_year(self) -> int:
+        """Annualisation factor implied by the calendar these rows sit on."""
+        return self.calendar.periods_per_year
+
     def select(self, tickers: list[str]) -> "ReturnSeries":
         missing = [t for t in tickers if t not in self.tickers]
         if missing:
@@ -74,6 +90,7 @@ class ReturnSeries:
             data=self.data.select(["date"] + tickers),
             tickers=tickers,
             is_log=self.is_log,
+            calendar=self.calendar,
         )
 
     def trim(self, start: Optional[str] = None, end: Optional[str] = None) -> "ReturnSeries":
@@ -82,7 +99,8 @@ class ReturnSeries:
             df = df.filter(pl.col("date") >= pl.lit(start).str.to_date())
         if end:
             df = df.filter(pl.col("date") <= pl.lit(end).str.to_date())
-        return ReturnSeries(data=df, tickers=self.tickers, is_log=self.is_log)
+        return ReturnSeries(data=df, tickers=self.tickers, is_log=self.is_log,
+                            calendar=self.calendar)
 
     def portfolio_returns(self, weights: dict[str, float]) -> pl.Series:
         w = np.array([weights[t] for t in self.tickers])
@@ -91,5 +109,6 @@ class ReturnSeries:
     def __repr__(self) -> str:
         return (
             f"ReturnSeries(tickers={self.tickers}, obs={self.n_obs}, "
-            f"from={self.dates[0]}, to={self.dates[-1]}, log={self.is_log})"
+            f"from={self.dates[0]}, to={self.dates[-1]}, log={self.is_log}, "
+            f"calendar={self.calendar}, ppy={self.periods_per_year})"
         )

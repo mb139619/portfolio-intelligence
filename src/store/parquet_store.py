@@ -27,6 +27,7 @@ import duckdb
 import polars as pl
 from loguru import logger
 
+from src.domain.calendar import Calendar, resolve as resolve_calendar
 from src.domain.returns import ReturnSeries
 
 
@@ -36,6 +37,10 @@ class ParquetStore:
         self.prices_dir = self.base / "raw" / "prices"
         self.macro_dir = self.base / "raw" / "macro"
         self.factors_dir = self.base / "raw" / "factors"
+        # Per-ticker metadata (calendar, asset class, source). Kept OUTSIDE
+        # prices_dir on purpose: the DuckDB `prices()` macro globs that
+        # directory, and a file with a different schema would break the union.
+        self.assets_path = self.base / "raw" / "_assets.parquet"
         for d in (self.prices_dir, self.macro_dir, self.factors_dir):
             d.mkdir(parents=True, exist_ok=True)
 
@@ -150,19 +155,105 @@ class ParquetStore:
         end: Optional[str] = None,
         kind: str = "simple",
     ) -> ReturnSeries:
-        """Read prices and convert to a ReturnSeries (drops rows with any null)."""
+        """
+        Read prices and convert to a ReturnSeries.
+
+        Calendar handling lives here, and it is the whole ballgame when asset
+        classes are mixed. The `drop_nulls` below is an INTERSECTION: only dates
+        on which every requested asset actually traded survive. Nothing is ever
+        forward-filled, so a crypto series joined to equities loses its weekends
+        rather than lending equities two fake flat days a week.
+
+        The resulting series is annualised on the most restrictive calendar of
+        those it contains — 252 for any mix involving an exchange-traded asset,
+        365 only when everything trades continuously. Annualising an
+        intersected series at 365 would inflate volatility by about 20%.
+        """
         prices = self.read_prices(tickers, start, end)
         if prices.is_empty():
             raise ValueError(f"No price data for {tickers}")
-        # Drop rows where any ticker is null so returns are aligned
+
+        present = [c for c in prices.columns if c != "date"]
+        n_before = len(prices)
         prices = prices.drop_nulls()
+
+        calendars = [self.calendar_for(t) for t in present]
+        calendar = resolve_calendar(calendars)
+
+        distinct = {str(c) for c in calendars}
+        if len(distinct) > 1:
+            dropped = n_before - len(prices)
+            logger.info(
+                f"Mixed calendars across {present} ({', '.join(sorted(distinct))}). "
+                f"Intersected to {len(prices)} common dates, dropping {dropped}; "
+                f"annualising at {calendar.periods_per_year}/yr ({calendar}). "
+                f"No prices were forward-filled."
+            )
+
         if kind == "log":
-            return ReturnSeries.from_log_prices(prices)
-        return ReturnSeries.from_prices(prices)
+            return ReturnSeries.from_log_prices(prices, calendar=calendar)
+        return ReturnSeries.from_prices(prices, calendar=calendar)
 
     # ------------------------------------------------------------------
     # Metadata helpers
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Asset metadata — the calendar travels with the data
+    # ------------------------------------------------------------------
+
+    def write_asset_meta(
+        self, ticker: str, calendar: Calendar,
+        asset_class: str = "unknown", source: str = "",
+    ) -> None:
+        """
+        Record how a ticker behaves. Written by ingestion, read by everything
+        that needs to annualise or judge a gap.
+
+        This exists so the store never has to import the ingestion layer to
+        find out that BTC trades on weekends — the fact is stored alongside the
+        prices instead of being re-derived from whoever fetched them.
+        """
+        row = pl.DataFrame({
+            "ticker": [ticker],
+            "calendar": [str(calendar)],
+            "asset_class": [asset_class],
+            "source": [source],
+        })
+        if self.assets_path.exists():
+            existing = pl.read_parquet(self.assets_path)
+            row = pl.concat([existing, row], how="vertical_relaxed").unique(
+                subset=["ticker"], keep="last", maintain_order=True
+            )
+        row.sort("ticker").write_parquet(self.assets_path)
+
+    def read_asset_meta(self) -> dict[str, dict]:
+        """{ticker: {calendar, asset_class, source}}. Empty if never written."""
+        if not self.assets_path.exists():
+            return {}
+        df = pl.read_parquet(self.assets_path)
+        return {r["ticker"]: r for r in df.to_dicts()}
+
+    def calendar_for(self, ticker: str) -> Calendar:
+        """
+        A ticker's calendar, defaulting to TRADING_DAYS when unknown.
+
+        The default is what keeps this change backward compatible: price files
+        written before the metadata existed carry no entry, and every one of
+        them is an exchange-traded instrument, so they resolve exactly as they
+        did before.
+        """
+        meta = self.read_asset_meta().get(ticker)
+        if not meta:
+            return Calendar.TRADING_DAYS
+        try:
+            return Calendar(meta["calendar"])
+        except ValueError:
+            logger.warning(
+                f"Unknown calendar {meta['calendar']!r} recorded for {ticker}; "
+                f"falling back to {Calendar.TRADING_DAYS}"
+            )
+            return Calendar.TRADING_DAYS
 
     def last_date(self, ticker: str) -> Optional[date]:
         path = self.prices_dir / f"{ticker}.parquet"

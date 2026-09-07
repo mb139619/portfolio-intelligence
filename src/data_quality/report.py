@@ -13,11 +13,12 @@ from dataclasses import dataclass
 import polars as pl
 from loguru import logger
 
+from src.domain.calendar import Calendar
 from src.store.parquet_store import ParquetStore
 from src.data_quality.checks import (
     QualityFinding, Severity,
     check_missing_values, check_short_history, check_return_outliers,
-    check_stale_prices, check_calendar_gaps,
+    check_stale_prices, check_calendar_gaps, check_observation_gaps,
 )
 
 
@@ -96,9 +97,8 @@ def run_quality_report(
     if not tickers:
         return QualityReport(findings=[], tickers=[])
 
-    # Build the panel calendar = union of all dates across tickers
-    panel_dates: set = set()
     frames: dict[str, pl.DataFrame] = {}
+    calendars: dict[str, Calendar] = {}
     for t in tickers:
         path = store.prices_dir / f"{t}.parquet"
         if not path.exists():
@@ -107,16 +107,33 @@ def run_quality_report(
         if df.is_empty():
             continue
         frames[t] = df
-        panel_dates.update(df["date"].to_list())
-    panel = pl.Series("date", sorted(panel_dates))
+        calendars[t] = store.calendar_for(t)
+
+    # One panel PER CALENDAR, not one panel overall. A single union panel would
+    # flag every equity as missing ~104 dates a year the moment a 24/7 asset
+    # joined the store — those are weekends, not gaps, and the real findings
+    # would drown in them.
+    panels: dict[Calendar, pl.Series] = {}
+    for cal in set(calendars.values()):
+        dates: set = set()
+        for t, df in frames.items():
+            if calendars[t] is cal:
+                dates.update(df["date"].to_list())
+        panels[cal] = pl.Series("date", sorted(dates))
 
     findings: list[QualityFinding] = []
     for t, df in frames.items():
+        cal = calendars[t]
+        # A "usable year" is 252 observations on an exchange and 365 on a
+        # continuous venue; comparing both against 252 would let a crypto
+        # series eight months short of a year pass as complete.
+        scaled_min_obs = round(min_obs * cal.periods_per_year / 252)
         findings += check_missing_values(df, t)
-        findings += check_short_history(df, t, min_obs=min_obs)
+        findings += check_short_history(df, t, min_obs=scaled_min_obs)
         findings += check_return_outliers(df, t, asset_class=asset_classes.get(t))
         findings += check_stale_prices(df, t, min_run=stale_min_run)
-        findings += check_calendar_gaps(df, t, panel)
+        findings += check_calendar_gaps(df, t, panels[cal], calendar=cal)
+        findings += check_observation_gaps(df, t, calendar=cal)
 
     report = QualityReport(findings=findings, tickers=list(frames.keys()))
     logger.info(

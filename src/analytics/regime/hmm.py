@@ -36,6 +36,11 @@ class RegimeModel:
     dates: list = field(repr=False)
     labels: list[str] = field(default_factory=list)
     log_likelihood: float = 0.0
+    # Annualisation factor for the series this was fitted on. Must come from the
+    # data's calendar: a 24/7 crypto series has 365 observations a year, and
+    # reporting its regime volatility at 252 understates it by a factor of
+    # sqrt(365/252) ≈ 1.20.
+    ppy: int = 252
 
     @property
     def current_state(self) -> int:
@@ -50,17 +55,18 @@ class RegimeModel:
                 for i in range(self.n_states)}
 
     def summary(self) -> str:
-        lines = [f"-- Regime Model ({self.n_states} states, logL={self.log_likelihood:.0f}) --",
+        lines = [f"-- Regime Model ({self.n_states} states, "
+                 f"logL={self.log_likelihood:.0f}, {self.ppy}/yr) --",
                  f"  {'regime':<12} {'ann.ret':>9} {'ann.vol':>9} {'avg.dur':>9} {'freq':>7}"]
         freqs = np.bincount(self.states, minlength=self.n_states) / len(self.states)
         for i in range(self.n_states):
             # Annualised return shown geometrically and clipped: raw fitted
-            # intercepts for rare regimes can be noisy, and mean×252 can blow up
+            # intercepts for rare regimes can be noisy, and mean×ppy can blow up
             # visually — geometric annualisation is the honest, bounded figure.
-            ann_ret = (1.0 + self.means[i]) ** 252 - 1.0
+            ann_ret = (1.0 + self.means[i]) ** self.ppy - 1.0
             lines.append(
                 f"  {self.labels[i]:<12} {ann_ret:>9.1%} "
-                f"{self.volatilities[i]*np.sqrt(252):>9.1%} "
+                f"{self.volatilities[i]*np.sqrt(self.ppy):>9.1%} "
                 f"{self.expected_durations[i]:>8.0f}d {freqs[i]:>7.1%}"
             )
         probs = self.current_probabilities()
@@ -83,12 +89,19 @@ def fit_regimes(
     n_states: int = 2,
     search_reps: int = 20,
     seed: int = 42,
+    ppy: int = 252,
 ) -> RegimeModel:
     """
     Fit a Gaussian Markov-switching model (switching mean and variance).
 
     returns : 1-D array of the series to detect regimes on (e.g. Mkt-RF daily).
     search_reps : random restarts for EM — guards against local optima.
+    ppy : observations per year, used only to annualise the reported figures.
+          Pass `rs.periods_per_year` rather than the default when the series is
+          not exchange-traded — a 24/7 series has 365.
+
+    The estimation itself is calendar-agnostic: it sees a sequence of returns
+    and knows nothing about weekends. Only the reporting needs `ppy`.
     """
     from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
 
@@ -138,4 +151,5 @@ def fit_regimes(
         dates=list(dates),
         labels=_label_by_vol(n_states),
         log_likelihood=float(res.llf),
+        ppy=ppy,
     )

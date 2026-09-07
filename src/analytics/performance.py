@@ -244,7 +244,9 @@ def compute_metrics(r: np.ndarray, rf=0.04, ppy: int = 252,
 
 
 def rolling_metric(rs: ReturnSeries, ticker: str, window: int = 252,
-                   ppy: int = 252, rf=0.04) -> pl.DataFrame:
+                   ppy: int | None = None, rf=0.04) -> pl.DataFrame:
+    """Rolling Sharpe, volatility and drawdown. ppy defaults to rs's calendar."""
+    ppy = rs.periods_per_year if ppy is None else ppy
     r = rs.to_numpy_series(ticker)
     dates = rs.dates.to_list()
     rows = []

@@ -21,7 +21,7 @@ from loguru import logger
 from src.config import settings
 from src.store.parquet_store import ParquetStore
 from src.ingestion.base import IngestionResult
-from src.ingestion.yahoo import YahooIngester
+from src.ingestion.prices import PricesIngester, resolve as resolve_price_source
 from src.ingestion.rates import RatesIngester
 from src.ingestion.french import FrenchIngester
 
@@ -29,7 +29,7 @@ from src.ingestion.french import FrenchIngester
 class IngestionPipeline:
     def __init__(self, store: ParquetStore) -> None:
         self.store = store
-        self.yahoo = YahooIngester()
+        self.prices = PricesIngester()
         self.rates = RatesIngester()
         self.french = FrenchIngester()
 
@@ -40,9 +40,20 @@ class IngestionPipeline:
         tickers: list[str],
         start: Optional[str] = None,
         incremental: bool = True,
+        asset_classes: Optional[dict[str, str]] = None,
     ) -> list[IngestionResult]:
+        """
+        Fetch prices for any ticker the price registry can route.
+
+        `asset_classes` optionally overrides the registry's guess per ticker —
+        the portfolio spec knows that TLT is fixed income where the registry
+        only knows it is "some Yahoo symbol", and the data quality outlier
+        bands depend on getting that right.
+        """
+        asset_classes = asset_classes or {}
         results = []
         for t in tickers:
+            source = resolve_price_source(t)
             fetch_start = start or settings.default_start
             if incremental:
                 last = self.store.last_date(t)
@@ -50,14 +61,31 @@ class IngestionPipeline:
                     fetch_start = (last + timedelta(days=1)).isoformat()
                     if fetch_start >= str(__import__("datetime").date.today()):
                         logger.info(f"{t} already up to date")
-                        results.append(IngestionResult("yahoo", t, 0, None, None, True))
+                        results.append(
+                            IngestionResult(source.backend, t, 0, None, None, True)
+                        )
+                        # Still record the metadata: a ticker already on disk
+                        # from before the registry existed has no calendar
+                        # recorded, and skipping it here would leave it stuck
+                        # on the default forever.
+                        self._record_meta(t, source, asset_classes)
                         continue
 
-            df, res = self.yahoo.ingest(t, fetch_start)
+            df, res = self.prices.ingest(t, fetch_start)
             if res.success and res.rows > 0:
                 self.store.write_prices(t, df, upsert=True)
+                self._record_meta(t, source, asset_classes)
             results.append(res)
         return results
+
+    def _record_meta(self, ticker: str, source, asset_classes: dict[str, str]) -> None:
+        self.store.write_asset_meta(
+            ticker,
+            calendar=source.calendar,
+            asset_class=asset_classes.get(ticker, source.asset_class),
+            source=f"{source.backend}:{source.exchange}" if source.exchange
+            else source.backend,
+        )
 
     # --- rates ---
 
