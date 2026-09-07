@@ -588,3 +588,259 @@ def plot_weights_comparison(
     fig.update_xaxes(tickformat=".0%", title="weight")
     fig.update_yaxes(autorange="reversed")
     return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 11. Rolling % risk contribution — how the risk mix drifts
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_rolling_risk_contribution(
+    rolling,
+    title: str = "Rolling % risk contribution",
+) -> go.Figure:
+    """
+    Stacked area of each asset's share of portfolio risk through time. Static
+    weights can still produce a badly drifting risk mix — that drift is the
+    thing a single end-of-period decomposition cannot show.
+
+    Takes the long DataFrame from `rolling_risk_contribution`
+    (columns: date, ticker, pct_rc, portfolio_vol).
+    """
+    wide = rolling.pivot(index="date", on="ticker", values="pct_rc").sort("date")
+    dates = wide["date"].to_list()
+    tickers = [c for c in wide.columns if c != "date"]
+
+    fig = go.Figure()
+    for i, t in enumerate(tickers):
+        fig.add_trace(go.Scatter(
+            x=dates, y=wide[t].to_list(), name=t, mode="lines",
+            stackgroup="one", line=dict(width=0.5, color=PALETTE[i % len(PALETTE)]),
+        ))
+    _base_layout(fig, title)
+    fig.update_yaxes(tickformat=".0%", title="share of risk", range=[0, 1])
+    fig.update_layout(legend=dict(orientation="h", y=1.08))
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 12. PCA scree — how many latent factors actually drive the book
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_scree(
+    model, title: str = "Scree plot — explained variance per PC"
+) -> go.Figure:
+    """Explained variance per principal component, with the cumulative curve."""
+    scree = model.scree_data()
+    pcs = scree["pc"].to_list()
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=pcs, y=scree["explained"].to_list(), name="explained",
+        marker_color=PALETTE[0],
+    ))
+    fig.add_trace(go.Scatter(
+        x=pcs, y=scree["cumulative"].to_list(), name="cumulative",
+        mode="lines+markers", line=dict(color=NEGATIVE, width=2),
+    ))
+    _base_layout(fig, title)
+    fig.update_yaxes(tickformat=".0%", title="variance explained", range=[0, 1.02])
+    fig.update_layout(legend=dict(orientation="h", y=1.08))
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 13. PCA loadings heatmap — which assets load on which component
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_loadings_heatmap(
+    model,
+    n_components: int | None = None,
+    title: str = "PCA factor loadings",
+) -> go.Figure:
+    """
+    Asset × principal-component loadings on a diverging scale centred at zero,
+    so sign (which side of a component an asset sits on) reads at a glance.
+    """
+    k = n_components or model.n_assets
+    df = model.loadings_dataframe(n_components=k)
+    tickers = df["ticker"].to_list()
+    pcs = [c for c in df.columns if c != "ticker"]
+    z = [[df[pc][i] for pc in pcs] for i in range(len(tickers))]
+
+    fig = go.Figure(go.Heatmap(
+        z=z, x=pcs, y=tickers,
+        colorscale="RdBu", zmid=0.0,
+        colorbar=dict(title="loading"),
+        hovertemplate="%{y} · %{x}: %{z:.3f}<extra></extra>",
+    ))
+    _base_layout(fig, title, height=120 + 42 * len(tickers))
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 14. Correlation heatmap
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_correlation_heatmap(
+    corr: np.ndarray,
+    tickers: list[str],
+    title: str = "Correlation matrix",
+) -> go.Figure:
+    """
+    Correlation matrix on a diverging scale fixed to [-1, 1]. Pass the
+    cluster-reordered matrix and its matching ticker order to get the
+    block-diagonal view where cluster structure becomes visible.
+    """
+    fig = go.Figure(go.Heatmap(
+        z=[[float(v) for v in row] for row in corr],
+        x=tickers, y=tickers,
+        colorscale="RdBu", zmid=0.0, zmin=-1.0, zmax=1.0,
+        colorbar=dict(title="ρ"),
+        hovertemplate="%{y} · %{x}: %{z:.2f}<extra></extra>",
+    ))
+    _base_layout(fig, title, height=140 + 46 * len(tickers))
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 15. Average correlation — the systemic indicator
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_average_correlation(
+    avg,
+    title: str = "Average pairwise correlation",
+) -> go.Figure:
+    """
+    Mean off-diagonal correlation over time, with the min/max envelope behind
+    it. Spikes toward 1 mark the episodes where diversification stops working.
+    Takes the DataFrame from `average_correlation`.
+    """
+    dates = avg["date"].to_list()
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=dates, y=avg["max_correlation"].to_list(), mode="lines",
+        line=dict(width=0), showlegend=False, hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter(
+        x=dates, y=avg["min_correlation"].to_list(), mode="lines",
+        line=dict(width=0), fill="tonexty", fillcolor="rgba(46,94,170,0.13)",
+        name="min–max range", hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter(
+        x=dates, y=avg["avg_correlation"].to_list(), mode="lines",
+        name="average", line=dict(color=PALETTE[0], width=1.8),
+    ))
+    _base_layout(fig, title)
+    fig.update_yaxes(title="correlation", range=[-1, 1])
+    fig.add_hline(y=0, line_color="rgba(0,0,0,0.25)", line_width=1)
+    fig.update_layout(legend=dict(orientation="h", y=1.08))
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 16. Rolling factor betas — exposures are not constant
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_rolling_betas(
+    roll: dict,
+    title: str = "Rolling factor betas",
+) -> go.Figure:
+    """
+    Each factor beta through time. The spread of these paths is the visual
+    argument for why a full-sample beta understates crisis losses — the stress
+    tests assume the very constancy this chart disproves.
+
+    Takes the dict returned by `rolling_betas`.
+    """
+    fig = go.Figure()
+    for i, (f, series) in enumerate(roll["betas"].items()):
+        fig.add_trace(go.Scatter(
+            x=roll["dates"], y=[float(v) for v in series], name=f, mode="lines",
+            line=dict(width=1.6, color=PALETTE[i % len(PALETTE)]),
+        ))
+    _base_layout(fig, title)
+    fig.update_yaxes(title="beta")
+    fig.add_hline(y=0, line_color="rgba(0,0,0,0.25)", line_width=1)
+    fig.update_layout(legend=dict(orientation="h", y=1.08))
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 17. Regime probability — P(stress) through time
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_regime_probability(
+    regime,
+    state: int | None = None,
+    title: str | None = None,
+) -> go.Figure:
+    """
+    Smoothed probability of one regime over time. Defaults to the highest-
+    volatility state, which the model canonicalises to the last index.
+    Reading the probability rather than the hard classification shows how
+    confident the model is, and where it is genuinely uncertain.
+    """
+    idx = regime.n_states - 1 if state is None else state
+    label = regime.labels[idx]
+    if title is None:
+        title = f"P({label} regime)"
+
+    fig = go.Figure(go.Scatter(
+        x=regime.dates, y=[float(v) for v in regime.smoothed_probs[:, idx]],
+        mode="lines", fill="tozeroy",
+        line=dict(color=NEGATIVE, width=1),
+        fillcolor="rgba(196,78,82,0.28)",
+    ))
+    _base_layout(fig, title, height=320)
+    fig.update_yaxes(title="probability", range=[0, 1], tickformat=".0%")
+    fig.update_layout(showlegend=False)
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 18. Stress summary — every scenario on one axis
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_stress_summary(
+    scenarios: list[dict],
+    title: str = "Stress tests — PnL per scenario",
+) -> go.Figure:
+    """
+    Horizontal bars of scenario PnL, worst first. Input is a list of
+    {"scenario": str, "pnl": float, "type": str} where type distinguishes
+    historical replays from parametric shocks — they answer different
+    questions and should not be read as one ranking.
+    """
+    ordered = sorted(scenarios, key=lambda s: s["pnl"])
+    kinds = []
+    for s in ordered:
+        if s.get("type") not in kinds:
+            kinds.append(s.get("type"))
+
+    fig = go.Figure()
+    for j, kind in enumerate(kinds):
+        subset = [s for s in ordered if s.get("type") == kind]
+        fig.add_trace(go.Bar(
+            y=[s["scenario"] for s in subset],
+            x=[s["pnl"] for s in subset],
+            orientation="h", name=str(kind),
+            marker_color=PALETTE[j % len(PALETTE)],
+            text=[f"{s['pnl']:.1%}" for s in subset],
+            textposition="outside",
+        ))
+    _base_layout(fig, title, height=max(320, 40 * len(ordered) + 120))
+    # Outside labels on the longest bar would otherwise collide with the
+    # category name, so pad the axis past the extremes rather than let the
+    # worst scenario — the one people look at first — render unreadable.
+    lo = min((s["pnl"] for s in ordered), default=0.0)
+    hi = max((s["pnl"] for s in ordered), default=0.0)
+    pad = max(abs(lo), abs(hi), 0.01) * 0.18
+    fig.update_xaxes(
+        tickformat=".0%", title="portfolio PnL",
+        range=[min(lo, 0.0) - pad, max(hi, 0.0) + pad],
+    )
+    fig.update_layout(legend=dict(orientation="h", y=1.08))
+    return fig
