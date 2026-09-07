@@ -79,7 +79,7 @@ def detect_hidden_concentration(
     weights: dict[str, float],
     rs: ReturnSeries,
     method: str = "covariance",
-    ppy: int = 252,
+    ppy: int | None = None,
     model: PCARiskModel | None = None,
 ) -> ConcentrationReport:
     """
@@ -91,6 +91,7 @@ def detect_hidden_concentration(
     """
     tickers = list(weights.keys())
     aligned = rs.select(tickers)
+    ppy = aligned.periods_per_year if ppy is None else ppy
     w = np.array([weights[t] for t in tickers])
 
     if model is None:

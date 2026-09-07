@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from src.domain.calendar import Calendar
+
 
 class AssetClass(str, Enum):
     EQUITY = "equity"
@@ -16,6 +18,7 @@ class AssetClass(str, Enum):
     COMMODITY = "commodity"
     CASH = "cash"
     ALTERNATIVE = "alternative"
+    CRYPTO = "crypto"
 
 
 class Currency(str, Enum):
@@ -32,6 +35,21 @@ class Asset:
     asset_class: AssetClass
     currency: Currency = Currency.USD
     region: Optional[str] = None
+    # Left unset, the calendar follows from the asset class — crypto trades
+    # continuously, everything else on exchange hours. Pass it explicitly to
+    # override (a crypto product that only trades on an exchange schedule, say).
+    # After construction this is always a real Calendar, never None.
+    calendar: Optional[Calendar] = None
+
+    def __post_init__(self) -> None:
+        if self.calendar is None:
+            object.__setattr__(
+                self, "calendar", Calendar.for_asset_class(self.asset_class)
+            )
+
+    @property
+    def periods_per_year(self) -> int:
+        return self.calendar.periods_per_year
 
     def __str__(self) -> str:
         return f"{self.ticker} ({self.name})"

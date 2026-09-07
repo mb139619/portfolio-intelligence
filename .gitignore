@@ -1,6 +1,9 @@
-data/
+# Local data lake. Anchored to the repo root on purpose: an unanchored "data/"
+# also matches web/data/, which holds the built dashboard payload we DO commit.
+/data/
 *.duckdb
 *.parquet
+
 __pycache__/
 *.py[cod]
 .venv/
@@ -10,3 +13,9 @@ __pycache__/
 notebooks/**/*.ipynb
 .env
 .DS_Store
+
+# Dashboard build artefacts.
+#   web/data/analysis.json  IS committed — it is what a static host serves.
+#   the --standalone bundle inlines Plotly and the payload into ~6 MB of HTML,
+#   which is a build output, not a source file.
+web/data/*.html

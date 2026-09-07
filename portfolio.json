@@ -1,0 +1,35 @@
+{
+  "name": "Demo 60/40-ish",
+  "description": "Multi-asset book: US large cap, Nasdaq, developed ex-US, long Treasuries, gold.",
+  "start": "2018-01-01",
+  "end": null,
+  "cov_method": "ledoit_wolf_cc",
+
+  "positions": [
+    { "ticker": "SPY", "name": "S&P 500 ETF",      "asset_class": "equity",       "weight": 0.35 },
+    { "ticker": "TLT", "name": "20Y Treasury ETF", "asset_class": "fixed_income", "weight": 0.30 },
+    { "ticker": "QQQ", "name": "Nasdaq 100 ETF",   "asset_class": "equity",       "weight": 0.15 },
+    { "ticker": "GLD", "name": "Gold ETF",         "asset_class": "commodity",    "weight": 0.05 },
+    { "ticker": "EFA", "name": "MSCI EAFE ETF",    "asset_class": "equity",       "weight": 0.05 },
+    { "ticker": "BTC-USD", "name": "Bitcoin", "asset_class": "crypto", "weight": 0.10 }
+  ],
+
+  "rates": ["USD_FEDFUNDS", "USD_10Y", "EUR_DFR"],
+  "factor_datasets": ["FF5", "MOM"],
+  "factor_start": "1990-01-01",
+
+  "settings": {
+    "rolling_window": 63,
+    "beta_window": 252,
+    "corr_window": 63,
+    "n_clusters": 3,
+    "pca_method": "covariance",
+    "regime_states": 2,
+    "regime_search_reps": 20,
+    "var_confidence": 0.99,
+    "evt_threshold_quantile": 0.95,
+    "frontier_points": 50,
+    "cloud_points": 1500,
+    "hac_lags": 5
+  }
+}

@@ -52,19 +52,22 @@ class RiskDecomposition:
 
 
 def covariance_matrix(
-    rs: ReturnSeries, method: str = "sample", ppy: int = 252
+    rs: ReturnSeries, method: str = "sample", ppy: int | None = None
 ) -> np.ndarray:
     """
     Annualised covariance matrix. Thin wrapper over the canonical estimator in
     risk.covariance so there is a single source of truth; supports the same
     methods plus "ledoit_wolf_cc" (constant-correlation shrinkage, recommended).
+
+    ppy defaults to the series' calendar.
     """
     from src.analytics.risk.covariance import estimate_covariance
     return estimate_covariance(rs, method=method, ppy=ppy, annualize=True).matrix
 
 
 def decompose_risk(weights: dict[str, float], rs: ReturnSeries,
-                   cov_method: str = "sample", ppy: int = 252) -> RiskDecomposition:
+                   cov_method: str = "sample",
+                   ppy: int | None = None) -> RiskDecomposition:
     tickers = list(weights.keys())
     w = np.array([weights[t] for t in tickers])
     aligned = rs.select(tickers)
@@ -83,14 +86,18 @@ def decompose_risk(weights: dict[str, float], rs: ReturnSeries,
 
 def rolling_risk_contribution(weights: dict[str, float], rs: ReturnSeries,
                               window: int = 63, cov_method: str = "ewma",
-                              ppy: int = 252) -> pl.DataFrame:
+                              ppy: int | None = None) -> pl.DataFrame:
     tickers = list(weights.keys())
     aligned = rs.select(tickers)
     dates = aligned.dates.to_list()
     rows = []
     for i in range(window, aligned.n_obs + 1):
+        # The calendar must ride along on every slice; without it each window
+        # would silently fall back to 252 and a crypto book's rolling
+        # volatility would be understated by 20%.
         window_rs = ReturnSeries(
-            data=aligned.data.slice(i - window, window), tickers=tickers
+            data=aligned.data.slice(i - window, window), tickers=tickers,
+            calendar=aligned.calendar,
         )
         try:
             d = decompose_risk(weights, window_rs, cov_method, ppy)

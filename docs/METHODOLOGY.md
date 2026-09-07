@@ -517,7 +517,131 @@ correlation.
 
 ---
 
-## 12. General references & further reading
+## 12. Calendars & multi-asset-class data
+
+Equities trade roughly 252 days a year; a crypto pair trades all 365. Once both
+are in the same store, the calendar can no longer be an assumption baked into
+code — it becomes an attribute of the data, carried on the domain object and
+recorded alongside the prices. Every annualisation factor derives from it.
+
+### 12.1 Never forward-fill one calendar onto another
+
+The tempting way to align a 24/7 series with an exchange-traded one is to carry
+Friday's equity close through the weekend. This platform never does, and the
+reason is worth stating precisely, because the resulting output looks perfectly
+plausible.
+
+Filling weekends manufactures two artificial zero returns per week — about 28%
+of the sample. Those zeros:
+
+- **deflate volatility by roughly 15%.** They enter the variance denominator
+  while contributing nothing to the numerator.
+- **compress correlations toward zero.** The fabricated zeros are shared across
+  every equity, diluting genuine co-movement.
+- **corrupt regime detection.** A Markov-switching model fitted on such a series
+  learns a spurious low-volatility state that is simply "the weekend", and
+  reports it as a market regime with an expected duration of two days.
+
+The alternative is intersection: keep only dates on which every asset genuinely
+traded. `ParquetStore.read_returns` does this by construction (an outer join
+followed by `drop_nulls`), and logs how many observations it dropped. Reading
+BTC alongside SPY and TLT over 2018-2026 intersects 3,170 crypto days down to
+2,151 common dates — the 1,019 discarded rows are weekends and market holidays,
+and none of them is replaced by a fabricated price.
+
+The combined series is then annualised on the **most restrictive** calendar
+present. Annualising an intersected series at 365 would overstate volatility by
+√(365/252) ≈ 20%.
+
+### 12.2 Each analytic declares a cross-calendar policy
+
+| Policy | Meaning | Used by |
+|---|---|---|
+| **Native** | Runs on the asset's own frequency | tail risk, regime detection, realised volatility |
+| **Intersection** | Only dates where every asset traded | correlation, MST, covariance, factor betas |
+| **Unsupported** | Refuses with an explicit error | the Fama-French factor engine on crypto |
+
+The distinction between Native and Intersection is not cosmetic. BTC's realised
+volatility computed on the intersection with equities is not BTC's volatility —
+it is the volatility of BTC *observed on weekdays*, a different and less useful
+quantity that discards 28% of the sample.
+
+**Unsupported** is a deliberate refusal rather than a warning. The Fama-French
+factors are constructed from US equity portfolios sorted on size, value,
+profitability and investment. A beta of BTC on HML has no economic referent, and
+a clear exception is better than a coefficient someone later pastes into a
+report. `align_factors` raises `UnsupportedCalendarError` on a continuous
+calendar.
+
+### 12.3 Bar close misalignment
+
+Binance daily candles close at **00:00 UTC**; US equities close at 16:00 ET
+(21:00 UTC in winter, 20:00 in summer). A daily crypto bar dated *t* therefore
+ends three to four hours **after** the equity bar dated *t*, and contains news
+the equity bar could not.
+
+The consequence is spurious lead-lag structure: same-day crypto/equity
+correlations are contaminated by crypto having "seen" more of the day, and
+lagged correlations are biased in the opposite direction.
+
+**The chosen convention is exchange-native dating.** Nothing is re-based. This
+is a documented bias rather than a solved problem, and the honesty matters more
+than the fix: re-basing crypto to the equity close would introduce an
+undocumented interpolation in place of a stated offset. Cross-asset correlations
+involving crypto should be read with this in mind, and the effect is largest at
+daily frequency — it washes out at weekly.
+
+### 12.4 Sample period asymmetry
+
+Crypto history is short and covers roughly one full cycle. The Fama-French
+factors reach back to 1963; BTC/USDT on Binance begins in 2017. An HMM fitted on
+9,000 daily market observations spanning three decades and several distinct
+crises is estimating transition probabilities from a genuinely diverse sample;
+the same model on 3,169 BTC observations covering one boom and one bust is not.
+
+**Regime results across these two are not comparable**, and the difference is
+not one of statistical precision but of coverage: the crypto sample contains no
+observation of, say, a sustained high-inflation regime. Regime frequencies and
+expected durations estimated on it describe that single cycle, not a stationary
+process.
+
+A further wrinkle: the pairs are quoted in **USDT, not USD**. Tether's peg has
+broken before — to roughly $0.92 in October 2018, inside the sample — so a USDT
+pair is not a clean USD series. It is the deepest free history available, which
+is the trade being made explicitly rather than silently.
+
+### 12.5 Fat tails — what the data actually says
+
+The expectation going in was that crypto would show materially heavier tails,
+and therefore materially larger GPD shape parameters ξ in the peaks-over-
+threshold model. **Measured on 2018-2026 daily returns, it does not.**
+
+| Asset | Ann. vol | Skew | Excess kurtosis | GPD ξ | EVT VaR (99%) |
+|---|---|---|---|---|---|
+| SPY | 19.1% | −0.29 | 13.1 | 0.197 | 3.50% |
+| TLT | 15.4% | +0.17 | 5.1 | 0.175 | 2.42% |
+| GLD | 16.9% | −0.63 | 7.1 | 0.230 | 2.95% |
+| BTC-USD | 64.4% | −0.37 | 9.3 | 0.197 | 9.21% |
+| ETH-USD | 84.9% | −0.16 | 6.8 | 0.187 | 12.00% |
+
+BTC and SPY have essentially the same tail *shape* (ξ = 0.197 for both), and
+SPY's excess kurtosis is in fact the **highest** in the table. What separates
+crypto is not the shape of the tail but its **scale**: BTC's 99% one-day VaR is
+2.6× SPY's, and that ratio is almost exactly the ratio of their volatilities.
+
+Two things follow. First, the intuition that "crypto has fatter tails" conflates
+tail shape with volatility; on this sample the extra risk is overwhelmingly a
+scale effect, and a model that gets the volatility right needs no special tail
+treatment. Second, ξ ≈ 0.2 for every asset here means the same qualitative
+regime — heavy-tailed, finite variance, infinite fifth moment — so the same EVT
+machinery applies unchanged.
+
+This result is reported rather than smoothed away, and it is a within-sample
+finding on one cycle: see §12.4 before generalising it.
+
+---
+
+## 13. General references & further reading
 
 Textbooks that cover the whole pipeline and are the standard desk references:
 
