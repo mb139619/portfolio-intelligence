@@ -1,7 +1,30 @@
-# Backtesting Engine — Architecture Brief
+# Backtesting Engine — Architecture Brief (SUPERSEDED)
 
-> Append this section to the existing `CLAUDE.md` at repo root. It extends the
-> current architecture; it does not replace any existing invariant.
+> **This document is historical. `CLAUDE.md` §5 is authoritative.**
+>
+> The design below was integrated into `CLAUDE.md` with three deliberate
+> deviations. Where the two disagree, `CLAUDE.md` wins:
+>
+> 1. **Reporting.** This brief specifies a `report/` module built on Jinja2 and
+>    matplotlib. That was dropped: `src/export/` already implements the same
+>    pattern — a producer emits a payload, a renderer that computes nothing
+>    draws it, `--standalone` inlines it into one file — with a generic SPA
+>    shell and Plotly. The tearsheet is a second section producer feeding that
+>    pipeline, not a parallel reporting stack.
+> 2. **DataFrame library.** The contracts here are written in pandas. The
+>    codebase is polars-first (the store, `ReturnSeries`, every analytic), so
+>    the backtest layer is polars too; converting at each boundary would drift
+>    the project toward pandas without a decision being made.
+> 3. **`Context` recomputation.** This brief does not say when `covariance`,
+>    `regime` and `tail` are refreshed. `CLAUDE.md` §3 makes it explicit —
+>    recomputed on the rebalance schedule, carrying `derived_as_of` and the
+>    estimation window — because refitting an HMM every bar is unusable and
+>    silently reusing a full-sample fit is the exact bug the engine exists to
+>    prevent.
+>
+> `CLAUDE.md` also adds an invariant this brief omits: truncating on the
+> observation date is not enough. A backtest at `t` must see what was
+> *published* by `t`, not what was *dated* before it.
 
 ## Scope and positioning
 
