@@ -1,5 +1,7 @@
 # Portfolio Intelligence Platform
 
+[![CI](https://github.com/mb139619/portfolio-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/mb139619/portfolio-intelligence/actions/workflows/ci.yml)
+
 A near-institutional-grade portfolio analytics and risk platform, built entirely on **free, public data**. The goal is not performance tracking but a deep understanding of where return and risk come from: factor exposures, latent structure, hidden concentration, correlation topology, and behaviour under stress.
 
 Conceptually inspired by systems such as Aladdin, Barra, Axioma and Bloomberg PORT — using only open data sources.
@@ -41,17 +43,21 @@ portfolio-intelligence/
 ├── src/
 │   ├── config.py               # settings (single source of truth)
 │   ├── domain/                 # Portfolio, Position, Asset, ReturnSeries — pure
+│   │   └── calendar.py         #   TRADING_DAYS vs CONTINUOUS; annualisation
 │   ├── store/parquet_store.py  # Parquet I/O + DuckDB query engine
 │   ├── data_quality/          # post-ingestion checks (gaps, outliers, stale, gms)
 │   ├── ingestion/              # data source connectors behind one interface
 │   │   ├── base.py             #   abstract ingester
-│   │   ├── yahoo.py            #   prices / OHLCV
+│   │   ├── prices.py           #   price registry: ticker -> backend + calendar
+│   │   ├── yahoo.py            #   equities / ETFs OHLCV
+│   │   ├── crypto.py           #   crypto OHLCV via CCXT (Binance spot)
 │   │   ├── rates.py            #   rates: USD→FRED, EUR→ECB (unified interface)
 │   │   ├── french.py           #   Fama-French factors
 │   │   ├── http.py             #   resilient fetch (retry + backoff)
 │   │   └── pipeline.py         #   orchestrator (incremental updates)
 │   ├── analytics/
 │   │   ├── performance.py      # Sharpe, Sortino, Calmar, drawdown, VaR, CVaR
+│   │   ├── calendar_policy.py  # native / intersection / unsupported per analytic
 │   │   ├── risk/decomposition.py        # MCR, risk contribution, %RC
 │   │   ├── factors/            # factor engine, exposures, PCA-free attribution
 │   │   ├── pca/                # PCA risk model + Hidden Concentration Detector
@@ -69,7 +75,7 @@ portfolio-intelligence/
 │   ├── vendor/plotly.min.js
 │   └── data/analysis.json      # the built payload - what a static host serves
 ├── notebooks/01_end_to_end.py  # full walkthrough (jupytext py:percent)
-├── tests/                      # 177 unit tests
+├── tests/                      # 204 unit tests
 ├── docs/                       # USAGE.md, METHODOLOGY.md, DASHBOARD.md
 ├── pyproject.toml
 └── requirements.lock           # pinned, reproducible environment
@@ -130,11 +136,12 @@ option list and how to add a section.
 | Logical data    | Source                | Notes                                   |
 |-----------------|-----------------------|-----------------------------------------|
 | Prices / ETFs   | Yahoo Finance (`yfinance`) | OHLCV + adjusted close              |
+| Crypto          | Binance spot via `ccxt` | Daily OHLCV, 24/7 calendar             |
 | USD rates       | FRED (CSV endpoint)   | No API key required                     |
 | EUR rates       | ECB Data Portal (SDMX)| No API key required                     |
 | Factors         | Kenneth French Library| FF5 + Momentum, daily                   |
 
-Rates are exposed through a **single interface**: you request a logical series (`USD_FEDFUNDS`, `EUR_DFR`) and the registry routes it to the right backend. Adding a new currency or source is a registry entry, not new plumbing.
+Both rates and prices are exposed through a **single interface**: you request a logical series (`USD_FEDFUNDS`, `EUR_DFR`) or a logical ticker (`SPY`, `BTC-USD`) and the registry routes it to the right backend, carrying the trading calendar with it. Anything unregistered falls through to Yahoo, so the universe stays open. Adding a currency, a venue or an asset class is a registry entry, not new plumbing.
 
 ---
 
