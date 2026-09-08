@@ -1,8 +1,12 @@
-# Portfolio Intelligence Platform
+# Portfolio Backtesting & Risk Platform
 
 [![CI](https://github.com/mb139619/portfolio-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/mb139619/portfolio-intelligence/actions/workflows/ci.yml)
 
-A near-institutional-grade portfolio analytics and risk platform, built entirely on **free, public data**. The goal is not performance tracking but a deep understanding of where return and risk come from: factor exposures, latent structure, hidden concentration, correlation topology, and behaviour under stress.
+A strategy backtesting and research platform built entirely on **free, public data**, whose distinguishing claim is *rigour rather than returns*. It answers whether a strategy's result is real: was the data available at the time, does the edge survive costs, does it hold out of sample, and where does its risk actually come from.
+
+**Backtest rigour is the product; the strategies are the demonstration vehicle.** A well-instrumented equal-weight baseline is worth more here than an elaborate signal with a sloppy harness.
+
+Underneath sits a full risk engine — factor exposures, latent structure, hidden concentration, correlation topology, tail behaviour, regimes. That is what makes a result here worth more than a for-loop over prices: every strategy arrives with its factor attribution, its regime-conditional behaviour and its tail risk attached.
 
 Conceptually inspired by systems such as Aladdin, Barra, Axioma and Bloomberg PORT — using only open data sources.
 
@@ -10,25 +14,27 @@ Conceptually inspired by systems such as Aladdin, Barra, Axioma and Bloomberg PO
 
 ## Why this exists
 
-Most retail portfolio tools answer *"how much did I make?"*. This platform answers harder questions:
+Most retail backtesters answer *"what would this have returned?"* — and most of those answers are wrong, because the harness quietly saw the future. This platform is built around the questions that decide whether a result means anything:
 
-- Where does the **return** come from?
-- Where does the **risk** come from, asset by asset?
-- Which **factors** drive the portfolio (market, value, size, quality, ...)?
-- How does the portfolio react to **shocks** (2008, COVID, +200bp rates)?
-- What **hidden concentrations** exist — is a "diversified" portfolio secretly a single bet?
-- How does risk **evolve over time**?
+- Was the data **actually available at the time**, including publication lag?
+- Does the edge survive **transaction costs, slippage and turnover**?
+- Does it hold **out of sample**, or only on the window it was tuned on?
+- Where does the **risk** come from, asset by asset and factor by factor?
+- How does it behave in a **stress regime** rather than on average?
+- What **hidden concentration** is it carrying — is a "diversified" book secretly a single bet?
+- How badly does it lose in the **tail** the normal distribution does not model?
 
 ---
 
 ## Design principles
 
-1. **Separation of concerns** — data, analytics and visualization are fully decoupled.
-2. **Risk engine before dashboards** — the quantitative core comes first.
+1. **Point-in-time by construction** — look-ahead is prevented structurally, not by convention. The engine hands a strategy a context whose data is already truncated at `t`, with publication lag applied; a strategy never holds a reference to the full dataset, so there is no discipline to remember.
+2. **Separation of concerns** — data, analytics, backtesting and presentation are fully decoupled.
 3. **Parquet-first storage** — data lives in Parquet files; DuckDB is a stateless query engine over them, not a persistent database.
 4. **Pure analytics** — every analytic is a pure function (arrays in, results out): no state, no side effects, trivially testable.
-5. **Unidirectional dependencies** — `domain ← analytics`, `store ← ingestion`, `viz` depends only on analytics output.
-6. **Explainable & decomposable** — every number can be traced to its drivers.
+5. **Unidirectional dependencies** — `report → backtest → optimization → analytics → store ← ingestion`, all resting on `domain`. Nothing below ever imports from above.
+6. **Presentation renders, it does not compute** — a missing metric is added to the result object, never calculated in a template.
+7. **Explainable & decomposable** — every number can be traced to its drivers.
 
 ---
 
@@ -63,6 +69,7 @@ portfolio-intelligence/
 │   │   ├── pca/                # PCA risk model + Hidden Concentration Detector
 │   │   ├── correlation/        # rolling/EWMA corr, clustering, MST topology
 │   │   └── stress/             # historical replay + parametric shocks
+│   ├── backtest/               # (next) engine, strategies, execution, walk-forward
 │   ├── viz/plots.py            # reusable Plotly figures
 │   └── export/                 # portfolio.json -> analytics -> analysis.json
 │       ├── spec.py             #   input contract + validation
@@ -157,9 +164,10 @@ Both rates and prices are exposed through a **single interface**: you request a 
 | Correlation     | Rolling/EWMA correlation, clustering, Minimum Spanning Tree            |
 | Stress testing  | Historical replay (any era) + parametric factor/macro shocks          |
 | Tail risk       | Cornish-Fisher (modified) VaR + EVT peaks-over-threshold (GPD)         |
-| Regime detection| Markov-switching HMM + regime-conditional risk                        |
-| Data quality    | Post-ingestion checks: gaps, dated outliers (per asset class), stale  |
 | Regime detection| Gaussian HMM + vol-states baseline; regime-conditional beta/correlation |
+| Data quality    | Post-ingestion checks: gaps, dated outliers (per asset class), stale  |
+| Calendars       | Trading-day vs continuous; intersection, never forward-fill           |
+| Backtesting     | *(next)* point-in-time engine, costs & slippage, walk-forward folds   |
 
 See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour, [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the models and assumptions, and [`docs/DASHBOARD.md`](docs/DASHBOARD.md) for the web report.
 
@@ -170,7 +178,8 @@ See [`docs/USAGE.md`](docs/USAGE.md) for a guided tour, [`docs/METHODOLOGY.md`](
 - **Phase 1 (done)** — ingestion, store, domain model, performance & risk decomposition
 - **Phase 2 (done)** — factor engine, PCA + hidden concentration, correlation analytics, stress testing, viz module
 - **Phase 3 (done)** — regime detection (HMM + vol-states + regime-conditional analytics), network analytics, risk topology map
-- **Phase 4 (in progress)** — static dashboard done; portfolio optimization: minimum variance and the efficient frontier done, risk parity and HRP still to come
+- **Phase 4 (in progress)** — static dashboard done; crypto asset class and calendar-aware analytics done; portfolio optimization: minimum variance and the efficient frontier done, risk parity and HRP still to come
+- **Phase 5 (next)** — backtesting engine: point-in-time `Context`, execution modelling with explicit costs, walk-forward harness, tearsheet rendered through the existing export pipeline
 
 ---
 
