@@ -8,6 +8,7 @@ dependencies = [
     # Data sources
     "yfinance>=0.2.40",
     "requests>=2.32.0",
+    "ccxt>=4.4.0",              # crypto OHLCV (Binance spot, see ingestion/prices.py)
     # Storage & processing
     "duckdb>=1.1.0",
     "polars>=1.0.0",
