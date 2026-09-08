@@ -52,7 +52,9 @@ def get_with_retry(
 
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, params=params, headers=merged_headers, timeout=timeout)
+            resp = requests.get(
+                url, params=params, headers=merged_headers, timeout=timeout
+            )
             if resp.status_code >= 500:
                 raise requests.HTTPError(f"server error {resp.status_code}")
             resp.raise_for_status()

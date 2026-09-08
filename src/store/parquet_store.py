@@ -21,13 +21,13 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
 import duckdb
 import polars as pl
 from loguru import logger
 
-from src.domain.calendar import Calendar, resolve as resolve_calendar
+from src.domain.calendar import Calendar
+from src.domain.calendar import resolve as resolve_calendar
 from src.domain.returns import ReturnSeries
 
 
@@ -86,7 +86,8 @@ class ParquetStore:
     def write_prices(self, ticker: str, df: pl.DataFrame, upsert: bool = True) -> int:
         """
         Write a single ticker's prices to its Parquet file.
-        df: long format with columns date, ticker, open, high, low, close, adj_close, volume.
+        df: long format with columns date, ticker, open, high, low, close,
+            adj_close, volume.
 
         If upsert=True and a file exists, merge on date (new rows win) so that
         incremental updates don't lose history.
@@ -114,8 +115,8 @@ class ParquetStore:
     def read_prices(
         self,
         tickers: list[str],
-        start: Optional[str] = None,
-        end: Optional[str] = None,
+        start: str | None = None,
+        end: str | None = None,
         column: str = "adj_close",
     ) -> pl.DataFrame:
         """
@@ -151,8 +152,8 @@ class ParquetStore:
     def read_returns(
         self,
         tickers: list[str],
-        start: Optional[str] = None,
-        end: Optional[str] = None,
+        start: str | None = None,
+        end: str | None = None,
         kind: str = "simple",
     ) -> ReturnSeries:
         """
@@ -255,7 +256,7 @@ class ParquetStore:
             )
             return Calendar.TRADING_DAYS
 
-    def last_date(self, ticker: str) -> Optional[date]:
+    def last_date(self, ticker: str) -> date | None:
         path = self.prices_dir / f"{ticker}.parquet"
         if not path.exists():
             return None
@@ -273,7 +274,7 @@ class ParquetStore:
         df: pl.DataFrame,
         name: str,
         subdir: str,
-        upsert_keys: Optional[list[str]] = None,
+        upsert_keys: list[str] | None = None,
     ) -> int:
         """
         Write a long-format series file (e.g. rates, factors).
@@ -299,9 +300,9 @@ class ParquetStore:
 
     def read_factors(
         self,
-        factor_names: Optional[list[str]] = None,
-        start: Optional[str] = None,
-        end: Optional[str] = None,
+        factor_names: list[str] | None = None,
+        start: str | None = None,
+        end: str | None = None,
     ) -> pl.DataFrame:
         """
         Read factor series as a WIDE DataFrame: date | Mkt-RF | SMB | ... | RF
@@ -322,9 +323,9 @@ class ParquetStore:
 
     def read_rates(
         self,
-        series_ids: Optional[list[str]] = None,
-        start: Optional[str] = None,
-        end: Optional[str] = None,
+        series_ids: list[str] | None = None,
+        start: str | None = None,
+        end: str | None = None,
     ) -> pl.DataFrame:
         """Read rate series as a WIDE DataFrame: date | series_1 | series_2 | ..."""
         path = self.macro_dir / "rates.parquet"

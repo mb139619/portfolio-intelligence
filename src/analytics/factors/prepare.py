@@ -22,8 +22,6 @@ from loguru import logger
 
 from src.analytics.calendar_policy import require_trading_days
 from src.domain.calendar import Calendar
-from src.domain.returns import ReturnSeries
-
 
 # Standard Fama-French factor names (RF is handled separately, not a regressor)
 FF5_FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]

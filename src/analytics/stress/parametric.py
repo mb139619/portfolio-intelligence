@@ -20,7 +20,6 @@ import polars as pl
 
 from src.analytics.stress.historical import StressResult
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Factor shocks (FF space)
 # ─────────────────────────────────────────────────────────────────────────

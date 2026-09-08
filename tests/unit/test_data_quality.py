@@ -7,12 +7,14 @@ and assert exactly that check fires (and that clean data stays clean).
 
 import numpy as np
 import polars as pl
-import pytest
 
 from src.data_quality.checks import (
     Severity,
-    check_missing_values, check_short_history, check_return_outliers,
-    check_stale_prices, check_calendar_gaps,
+    check_calendar_gaps,
+    check_missing_values,
+    check_return_outliers,
+    check_short_history,
+    check_stale_prices,
 )
 from src.data_quality.report import run_quality_report
 from src.store.parquet_store import ParquetStore
@@ -45,7 +47,8 @@ class TestIndividualChecks:
             .then(None).otherwise(pl.col("adj_close")).alias("adj_close")
         )
         out = check_missing_values(df, "X")
-        assert any(f.check == "missing_values" and f.severity == Severity.CRITICAL for f in out)
+        assert any(f.check == "missing_values"
+                   and f.severity == Severity.CRITICAL for f in out)
 
     def test_detects_non_positive(self):
         df = _clean_prices()
@@ -66,7 +69,8 @@ class TestIndividualChecks:
         df = df.with_columns(pl.Series("adj_close", prices))
         out = check_return_outliers(df, "X", asset_class="equity")
         assert len(out) >= 1
-        assert out[0].severity == Severity.CRITICAL          # worst |r| ~ 50% > 40% equity crit
+        # worst |r| ~ 50% > 40% equity crit
+        assert out[0].severity == Severity.CRITICAL
         assert out[0].detail["worst_abs_return"] > 0.40
 
     def test_outlier_reports_dates(self):
@@ -103,7 +107,8 @@ class TestIndividualChecks:
 
         bond = check_return_outliers(df, "X", asset_class="fixed_income")
         crypto = check_return_outliers(df, "X", asset_class="crypto")
-        # Bonds: -10% breaches the 12% crit? no, but >5% warn → flagged; severity warning or critical
+        # Bonds: -10% breaches the 12% crit? no, but >5% warn → flagged;
+        # severity warning or critical
         assert len(bond) == 1
         # Crypto: -10% is below the 40% warn band and within stat noise → not flagged
         assert crypto == [] or crypto[0].severity == Severity.WARNING
@@ -143,10 +148,12 @@ class TestQualityReport:
         dirty = _clean_prices(seed=2)
         p = dirty["adj_close"].to_numpy().copy()
         p[150:] /= 2.0
-        dirty = dirty.with_columns([pl.Series("adj_close", p), pl.lit("DIRTY").alias("ticker")])
+        dirty = dirty.with_columns([
+            pl.Series("adj_close", p), pl.lit("DIRTY").alias("ticker")])
         store.write_prices("DIRTY", dirty)
 
-        report = run_quality_report(store, asset_classes={"DIRTY": "equity", "CLEAN": "equity"})
+        report = run_quality_report(
+            store, asset_classes={"DIRTY": "equity", "CLEAN": "equity"})
         assert "DIRTY" in report.critical_tickers()
         assert "CLEAN" in report.clean_tickers()
         assert report.n_critical >= 1
@@ -156,7 +163,8 @@ class TestQualityReport:
         store.write_prices("X", _clean_prices())
         report = run_quality_report(store)
         df = report.to_dataframe()
-        assert set(df.columns) >= {"ticker", "check", "severity", "message"} or df.is_empty()
+        assert (set(df.columns) >= {"ticker", "check", "severity", "message"}
+                or df.is_empty())
 
     def test_empty_store(self, tmp_path):
         store = ParquetStore(tmp_path)

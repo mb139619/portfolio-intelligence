@@ -8,12 +8,16 @@ import numpy as np
 import polars as pl
 import pytest
 
-from src.analytics.performance import (
-    sharpe_ratio, excess_returns, to_daily_rf, align_risk_free, compute_metrics,
-)
-from src.analytics.factors.prepare import AlignedFactorData
-from src.analytics.factors.engine import estimate_factor_model
 from src.analytics.factors.attribution import attribute_returns
+from src.analytics.factors.engine import estimate_factor_model
+from src.analytics.factors.prepare import AlignedFactorData
+from src.analytics.performance import (
+    align_risk_free,
+    compute_metrics,
+    excess_returns,
+    sharpe_ratio,
+    to_daily_rf,
+)
 
 
 class TestRiskFreeHandling:
@@ -145,7 +149,8 @@ class TestEWMAZeroMean:
         dates = pl.date_range(pl.date(2020, 1, 1),
                               pl.date(2020, 1, 1) + pl.duration(days=T - 1),
                               interval="1d", eager=True)
-        rs = ReturnSeries(pl.DataFrame({"date": dates, "A": R[:, 0], "B": R[:, 1], "C": R[:, 2]}),
+        rs = ReturnSeries(pl.DataFrame({"date": dates, "A": R[:, 0],
+                                        "B": R[:, 1], "C": R[:, 2]}),
                           ["A", "B", "C"])
         from_decomp = covariance_matrix(rs, method="ewma", ppy=252)
         from_matrices = ewma_m(R, lam=0.94) * 252

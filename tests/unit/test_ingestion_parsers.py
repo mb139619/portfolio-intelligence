@@ -11,8 +11,8 @@ import zipfile
 import polars as pl
 import pytest
 
+from src.ingestion.french import FrenchIngester, _parse_french_csv
 from src.ingestion.rates import _parse_fred_csv
-from src.ingestion.french import _parse_french_csv, FrenchIngester
 
 
 class TestFredParser:

@@ -57,7 +57,8 @@ class RegimeModel:
     def summary(self) -> str:
         lines = [f"-- Regime Model ({self.n_states} states, "
                  f"logL={self.log_likelihood:.0f}, {self.ppy}/yr) --",
-                 f"  {'regime':<12} {'ann.ret':>9} {'ann.vol':>9} {'avg.dur':>9} {'freq':>7}"]
+                 f"  {'regime':<12} {'ann.ret':>9} {'ann.vol':>9} "
+                 f"{'avg.dur':>9} {'freq':>7}"]
         freqs = np.bincount(self.states, minlength=self.n_states) / len(self.states)
         for i in range(self.n_states):
             # Annualised return shown geometrically and clipped: raw fitted

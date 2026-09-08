@@ -9,11 +9,13 @@ import numpy as np
 import polars as pl
 import pytest
 
-from src.analytics.factors.prepare import align_factors, AlignedFactorData
-from src.analytics.factors.engine import estimate_factor_model, rolling_betas
 from src.analytics.factors.attribution import (
-    decompose_factor_risk, attribute_returns, factor_covariance,
+    attribute_returns,
+    decompose_factor_risk,
+    factor_covariance,
 )
+from src.analytics.factors.engine import estimate_factor_model, rolling_betas
+from src.analytics.factors.prepare import AlignedFactorData, align_factors
 
 
 @pytest.fixture
@@ -80,7 +82,8 @@ class TestFactorRiskDecomposition:
         model = estimate_factor_model(aligned)
         decomp = decompose_factor_risk(model, aligned)
         # Shares sum to 1
-        assert decomp.pct_systematic + decomp.pct_specific == pytest.approx(1.0, rel=1e-6)
+        assert (decomp.pct_systematic + decomp.pct_specific
+                == pytest.approx(1.0, rel=1e-6))
 
     def test_factor_contributions_sum_to_systematic(self, known_model_data):
         aligned, _, _ = known_model_data

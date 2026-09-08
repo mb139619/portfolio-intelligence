@@ -35,12 +35,12 @@ different and less useful quantity.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from src.domain.calendar import Calendar
 
 
-class CalendarPolicy(str, Enum):
+class CalendarPolicy(StrEnum):
     NATIVE = "native"
     INTERSECTION = "intersection"
     UNSUPPORTED = "unsupported"

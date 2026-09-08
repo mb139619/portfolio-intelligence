@@ -43,13 +43,15 @@ def regime_conditional_stats(
         if len(r) == 0:
             continue
         ann_ret = float(np.mean(r) * ppy)
-        ann_vol = float(np.std(r, ddof=1) * np.sqrt(ppy)) if len(r) > 1 else float("nan")
+        ann_vol = (float(np.std(r, ddof=1) * np.sqrt(ppy))
+                   if len(r) > 1 else float("nan"))
         rows.append({
             "regime": lab,
             "frequency": float(mask.mean()),
             "ann_return": ann_ret,
             "ann_volatility": ann_vol,
-            "return_vol_ratio": ann_ret / ann_vol if ann_vol and ann_vol > 0 else float("nan"),
+            "return_vol_ratio": (ann_ret / ann_vol
+                                 if ann_vol and ann_vol > 0 else float("nan")),
             "n_days": int(mask.sum()),
         })
     return pl.DataFrame(rows)

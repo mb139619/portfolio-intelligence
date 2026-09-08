@@ -18,10 +18,11 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
-from src.domain.returns import ReturnSeries
 from src.analytics.correlation.matrices import (
-    correlation_matrix, correlation_distance,
+    correlation_distance,
+    correlation_matrix,
 )
+from src.domain.returns import ReturnSeries
 
 
 @dataclass

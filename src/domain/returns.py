@@ -7,7 +7,6 @@ Pure: depends only on polars and numpy.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import polars as pl
@@ -38,7 +37,7 @@ class ReturnSeries:
     @classmethod
     def from_prices(
         cls, prices: pl.DataFrame, calendar: Calendar = Calendar.TRADING_DAYS
-    ) -> "ReturnSeries":
+    ) -> ReturnSeries:
         tickers = [c for c in prices.columns if c != "date"]
         returns = prices.select(
             [pl.col("date")]
@@ -49,7 +48,7 @@ class ReturnSeries:
     @classmethod
     def from_log_prices(
         cls, prices: pl.DataFrame, calendar: Calendar = Calendar.TRADING_DAYS
-    ) -> "ReturnSeries":
+    ) -> ReturnSeries:
         tickers = [c for c in prices.columns if c != "date"]
         returns = prices.select(
             [pl.col("date")]
@@ -82,7 +81,7 @@ class ReturnSeries:
         """Annualisation factor implied by the calendar these rows sit on."""
         return self.calendar.periods_per_year
 
-    def select(self, tickers: list[str]) -> "ReturnSeries":
+    def select(self, tickers: list[str]) -> ReturnSeries:
         missing = [t for t in tickers if t not in self.tickers]
         if missing:
             raise ValueError(f"Tickers not in series: {missing}")
@@ -93,7 +92,7 @@ class ReturnSeries:
             calendar=self.calendar,
         )
 
-    def trim(self, start: Optional[str] = None, end: Optional[str] = None) -> "ReturnSeries":
+    def trim(self, start: str | None = None, end: str | None = None) -> ReturnSeries:
         df = self.data
         if start:
             df = df.filter(pl.col("date") >= pl.lit(start).str.to_date())

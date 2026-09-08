@@ -14,10 +14,8 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from typing import Optional
 
 import polars as pl
-import requests
 from loguru import logger
 
 from src.ingestion.base import BaseIngester
@@ -48,9 +46,14 @@ _DATE_ROW = re.compile(r"^\s*(\d{8})\s*,")
 class FrenchIngester(BaseIngester):
     source_name = "french"
 
-    def fetch(self, identifier: str, start: str, end: Optional[str] = None) -> pl.DataFrame:
+    def fetch(
+        self, identifier: str, start: str, end: str | None = None
+    ) -> pl.DataFrame:
         if identifier not in DATASET_FILES:
-            raise ValueError(f"Unknown French dataset '{identifier}'. Choose {list(DATASET_FILES)}")
+            raise ValueError(
+                f"Unknown French dataset '{identifier}'. "
+                f"Choose {list(DATASET_FILES)}"
+            )
         url = BASE + DATASET_FILES[identifier]
         logger.info(f"Downloading {url}")
         resp = get_with_retry(url, timeout=60)
@@ -111,7 +114,6 @@ def _parse_french_csv(text: str) -> pl.DataFrame:
 
     records = []
     for date_str, values in data_rows:
-        date = pl.lit(date_str).str.to_date("%Y%m%d")
         for fname, v in zip(factor_names, values):
             try:
                 val = float(v) / 100.0   # percent -> decimal

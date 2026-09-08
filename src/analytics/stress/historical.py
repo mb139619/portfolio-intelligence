@@ -13,14 +13,13 @@ Two methods:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import polars as pl
 from loguru import logger
 
-from src.domain.returns import ReturnSeries
 from src.analytics.stress.scenarios import HistoricalScenario
+from src.domain.returns import ReturnSeries
 
 
 @dataclass
@@ -29,8 +28,8 @@ class StressResult:
     method: str
     total_pnl: float                      # portfolio return over the window (decimal)
     contributions: dict[str, float]       # per asset / per factor (approx, see note)
-    window: Optional[str] = None
-    max_drawdown: Optional[float] = None
+    window: str | None = None
+    max_drawdown: float | None = None
     note: str = ""
 
     def summary(self) -> str:
@@ -94,7 +93,8 @@ def run_historical_asset(
 
     note = ""
     if missing:
-        note = f"renormalised over {present}; contributions are approximate (compounding)."
+        note = (f"renormalised over {present}; contributions are approximate "
+                f"(compounding).")
     else:
         note = "contributions approximate (compounding/rebalancing)."
 

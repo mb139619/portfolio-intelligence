@@ -32,8 +32,8 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
+from src.analytics.pca.model import PCARiskModel, fit_pca
 from src.domain.returns import ReturnSeries
-from src.analytics.pca.model import fit_pca, PCARiskModel
 
 
 @dataclass
@@ -58,7 +58,8 @@ class ConcentrationReport:
         ratio = (self.effective_bets_risk / self.effective_bets_weights
                  if self.effective_bets_weights > 0 else 1.0)
         if ratio < 0.5:
-            return "HIGH hidden concentration — risk far more concentrated than weights suggest"
+            return ("HIGH hidden concentration — risk far more concentrated "
+                    "than weights suggest")
         if ratio < 0.75:
             return "MODERATE hidden concentration"
         return "LOW hidden concentration — risk roughly as diversified as weights"

@@ -27,10 +27,10 @@ with equities yields the equity trading calendar and never a fabricated price.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class Calendar(str, Enum):
+class Calendar(StrEnum):
     """How often an asset can possibly trade."""
 
     TRADING_DAYS = "trading_days"   # exchange hours, ~252 observations a year

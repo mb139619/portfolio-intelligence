@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import polars as pl
 import yfinance as yf
 
@@ -13,7 +11,9 @@ from src.ingestion.base import BaseIngester
 class YahooIngester(BaseIngester):
     source_name = "yahoo"
 
-    def fetch(self, identifier: str, start: str, end: Optional[str] = None) -> pl.DataFrame:
+    def fetch(
+        self, identifier: str, start: str, end: str | None = None
+    ) -> pl.DataFrame:
         raw = yf.Ticker(identifier).history(
             start=start, end=end, auto_adjust=False, actions=False
         )

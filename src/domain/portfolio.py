@@ -6,13 +6,12 @@ These are the nouns of the system.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from src.domain.calendar import Calendar
 
 
-class AssetClass(str, Enum):
+class AssetClass(StrEnum):
     EQUITY = "equity"
     FIXED_INCOME = "fixed_income"
     COMMODITY = "commodity"
@@ -21,7 +20,7 @@ class AssetClass(str, Enum):
     CRYPTO = "crypto"
 
 
-class Currency(str, Enum):
+class Currency(StrEnum):
     USD = "USD"
     EUR = "EUR"
     GBP = "GBP"
@@ -34,12 +33,12 @@ class Asset:
     name: str
     asset_class: AssetClass
     currency: Currency = Currency.USD
-    region: Optional[str] = None
+    region: str | None = None
     # Left unset, the calendar follows from the asset class — crypto trades
     # continuously, everything else on exchange hours. Pass it explicitly to
     # override (a crypto product that only trades on an exchange schedule, say).
     # After construction this is always a real Calendar, never None.
-    calendar: Optional[Calendar] = None
+    calendar: Calendar | None = None
 
     def __post_init__(self) -> None:
         if self.calendar is None:
@@ -95,14 +94,14 @@ class Portfolio:
     def assets(self) -> list[Asset]:
         return [p.asset for p in self.positions]
 
-    def get_position(self, ticker: str) -> Optional[Position]:
+    def get_position(self, ticker: str) -> Position | None:
         for p in self.positions:
             if p.asset.ticker == ticker:
                 return p
         return None
 
     @classmethod
-    def equal_weight(cls, name: str, assets: list[Asset]) -> "Portfolio":
+    def equal_weight(cls, name: str, assets: list[Asset]) -> Portfolio:
         w = 1.0 / len(assets)
         return cls(name, [Position(a, w) for a in assets])
 

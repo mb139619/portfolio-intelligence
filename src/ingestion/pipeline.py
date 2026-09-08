@@ -14,16 +14,16 @@ stored date onward, so re-running is cheap.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Optional
 
 from loguru import logger
 
 from src.config import settings
-from src.store.parquet_store import ParquetStore
 from src.ingestion.base import IngestionResult
-from src.ingestion.prices import PricesIngester, resolve as resolve_price_source
-from src.ingestion.rates import RatesIngester
 from src.ingestion.french import FrenchIngester
+from src.ingestion.prices import PricesIngester
+from src.ingestion.prices import resolve as resolve_price_source
+from src.ingestion.rates import RatesIngester
+from src.store.parquet_store import ParquetStore
 
 
 class IngestionPipeline:
@@ -38,9 +38,9 @@ class IngestionPipeline:
     def update_prices(
         self,
         tickers: list[str],
-        start: Optional[str] = None,
+        start: str | None = None,
         incremental: bool = True,
-        asset_classes: Optional[dict[str, str]] = None,
+        asset_classes: dict[str, str] | None = None,
     ) -> list[IngestionResult]:
         """
         Fetch prices for any ticker the price registry can route.
@@ -92,7 +92,7 @@ class IngestionPipeline:
     def update_rates(
         self,
         series_ids: list[str],
-        start: Optional[str] = None,
+        start: str | None = None,
     ) -> list[IngestionResult]:
         results = []
         frames = []
@@ -116,7 +116,7 @@ class IngestionPipeline:
     def update_factors(
         self,
         datasets: list[str],
-        start: Optional[str] = None,
+        start: str | None = None,
     ) -> list[IngestionResult]:
         results = []
         frames = []

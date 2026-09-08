@@ -13,13 +13,18 @@ from dataclasses import dataclass
 import polars as pl
 from loguru import logger
 
+from src.data_quality.checks import (
+    QualityFinding,
+    Severity,
+    check_calendar_gaps,
+    check_missing_values,
+    check_observation_gaps,
+    check_return_outliers,
+    check_short_history,
+    check_stale_prices,
+)
 from src.domain.calendar import Calendar
 from src.store.parquet_store import ParquetStore
-from src.data_quality.checks import (
-    QualityFinding, Severity,
-    check_missing_values, check_short_history, check_return_outliers,
-    check_stale_prices, check_calendar_gaps, check_observation_gaps,
-)
 
 
 @dataclass
@@ -41,7 +46,8 @@ class QualityReport:
         return [f for f in self.findings if f.ticker == ticker]
 
     def critical_tickers(self) -> list[str]:
-        return sorted({f.ticker for f in self.findings if f.severity == Severity.CRITICAL})
+        return sorted({f.ticker for f in self.findings
+                       if f.severity == Severity.CRITICAL})
 
     def clean_tickers(self) -> list[str]:
         flagged = {f.ticker for f in self.findings}
@@ -72,7 +78,8 @@ class QualityReport:
         if crit:
             lines.append(f"  Needs attention   {', '.join(crit)}")
         lines.append("-------------------------------------------")
-        for f in sorted(self.findings, key=lambda x: (x.severity != Severity.CRITICAL, x.ticker)):
+        for f in sorted(self.findings,
+                        key=lambda x: (x.severity != Severity.CRITICAL, x.ticker)):
             lines.append(f"  {f}")
         return "\n".join(lines)
 

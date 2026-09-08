@@ -10,9 +10,9 @@ import numpy as np
 import polars as pl
 import pytest
 
-from src.domain.returns import ReturnSeries
-from src.analytics.pca.model import fit_pca
 from src.analytics.pca.concentration import detect_hidden_concentration
+from src.analytics.pca.model import fit_pca
+from src.domain.returns import ReturnSeries
 
 
 def _make_rs(returns: np.ndarray, tickers: list[str]) -> ReturnSeries:

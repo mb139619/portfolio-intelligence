@@ -9,8 +9,11 @@ import numpy as np
 import pytest
 
 from src.analytics.risk.tail import (
-    cornish_fisher_quantile, cornish_fisher_var, gaussian_var,
-    fit_evt_pot, tail_risk_comparison,
+    cornish_fisher_quantile,
+    cornish_fisher_var,
+    fit_evt_pot,
+    gaussian_var,
+    tail_risk_comparison,
 )
 
 

@@ -14,13 +14,15 @@ import numpy as np
 import polars as pl
 import pytest
 
-from src.domain.returns import ReturnSeries
+from src.analytics.regime.conditional import (
+    align_states_to_returns,
+    regime_conditional_avg_correlation,
+    regime_conditional_beta,
+    regime_conditional_stats,
+)
 from src.analytics.regime.hmm import fit_regimes
 from src.analytics.regime.volatility_states import volatility_states
-from src.analytics.regime.conditional import (
-    regime_conditional_stats, regime_conditional_beta,
-    regime_conditional_avg_correlation, align_states_to_returns,
-)
+from src.domain.returns import ReturnSeries
 
 
 @pytest.fixture
@@ -85,7 +87,8 @@ class TestHMM:
     def test_current_probabilities_sum_to_one(self, two_regime_series):
         y, dates, _ = two_regime_series
         model = fit_regimes(y, dates, n_states=2)
-        assert sum(model.current_probabilities().values()) == pytest.approx(1.0, abs=1e-6)
+        assert sum(model.current_probabilities().values()) == pytest.approx(
+            1.0, abs=1e-6)
 
     def test_summary_returns_are_bounded(self, two_regime_series):
         # If means were transition probs (~0.9), geometric annualisation would
@@ -111,7 +114,8 @@ class TestVolatilityStates:
     def test_states_ordered_by_vol(self, two_regime_series):
         y, dates, _ = two_regime_series
         vs = volatility_states(y, dates, window=21, n_states=2)
-        assert np.nanmean(vs.realized_vol[vs.states == 0]) < np.nanmean(vs.realized_vol[vs.states == 1])
+        assert (np.nanmean(vs.realized_vol[vs.states == 0])
+                < np.nanmean(vs.realized_vol[vs.states == 1]))
 
 
 class TestConditional:
@@ -119,7 +123,8 @@ class TestConditional:
         y, dates, _ = two_regime_series
         model = fit_regimes(y, dates, n_states=2)
         stats = regime_conditional_stats(y, model.states, model.labels)
-        d = {row["regime"]: row["ann_volatility"] for row in stats.iter_rows(named=True)}
+        d = {row["regime"]: row["ann_volatility"]
+             for row in stats.iter_rows(named=True)}
         assert d["stress"] > d["calm"]
 
     def test_conditional_correlation_rises_in_stress(self):

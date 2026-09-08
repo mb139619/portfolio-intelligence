@@ -37,13 +37,15 @@ class FactorRiskDecomposition:
     specific_vol: float
     pct_systematic: float                  # systematic_var / total_var
     pct_specific: float
-    factor_variance_contribution: dict[str, float]   # per-factor share of TOTAL variance
+    # per-factor share of TOTAL variance
+    factor_variance_contribution: dict[str, float]
     factor_vol_contribution: dict[str, float]        # per-factor, in vol units
 
     def summary(self) -> str:
         lines = [
             f"-- Factor Risk Decomposition (σ = {self.total_vol:.2%}) --",
-            f"  Systematic  {self.pct_systematic:>6.1%}  (vol {self.systematic_vol:.2%})",
+            f"  Systematic  {self.pct_systematic:>6.1%}  "
+            f"(vol {self.systematic_vol:.2%})",
             f"  Specific    {self.pct_specific:>6.1%}  (vol {self.specific_vol:.2%})",
             f"  {'factor':<10} {'% of total var':>14}",
         ]
@@ -112,7 +114,8 @@ class ReturnAttribution:
 
     def summary(self) -> str:
         lines = [
-            f"-- Return Attribution (total excess ann. = {self.total_excess_annualized:.2%}) --",
+            f"-- Return Attribution (total excess ann. = "
+            f"{self.total_excess_annualized:.2%}) --",
             f"  alpha       {self.alpha_annualized:>8.2%}",
             f"  {'factor':<10} {'contribution':>14}",
         ]

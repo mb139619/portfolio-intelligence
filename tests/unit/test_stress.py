@@ -6,25 +6,32 @@ import numpy as np
 import polars as pl
 import pytest
 
-from src.domain.returns import ReturnSeries
-from src.analytics.factors.prepare import AlignedFactorData
 from src.analytics.factors.engine import estimate_factor_model
-from src.analytics.stress.scenarios import (
-    HistoricalScenario, HISTORICAL_SCENARIOS, FACTOR_SHOCKS, MACRO_SHOCKS,
-)
+from src.analytics.factors.prepare import AlignedFactorData
 from src.analytics.stress.historical import (
-    run_historical_asset, run_historical_factor,
+    run_historical_asset,
+    run_historical_factor,
 )
 from src.analytics.stress.parametric import (
-    run_factor_shock, estimate_macro_sensitivities, run_macro_shock,
+    estimate_macro_sensitivities,
+    run_factor_shock,
+    run_macro_shock,
 )
+from src.analytics.stress.scenarios import (
+    FACTOR_SHOCKS,
+    HISTORICAL_SCENARIOS,
+    MACRO_SHOCKS,
+    HistoricalScenario,
+)
+from src.domain.returns import ReturnSeries
 
 
 def _make_rs(R, tickers, start=(2020, 1, 1)):
     T = R.shape[0]
     d0 = pl.date(*start)
     dates = pl.date_range(d0, d0 + pl.duration(days=T - 1), interval="1d", eager=True)
-    return ReturnSeries(pl.DataFrame({"date": dates, **{t: R[:, i] for i, t in enumerate(tickers)}}), tickers)
+    cols = {t: R[:, i] for i, t in enumerate(tickers)}
+    return ReturnSeries(pl.DataFrame({"date": dates, **cols}), tickers)
 
 
 @pytest.fixture
@@ -34,7 +41,8 @@ def model_3factor():
     F = np.random.normal(0, 0.01, size=(T, 3))
     betas = np.array([1.1, -0.3, 0.5])
     y = F @ betas + np.random.normal(0, 0.003, T)
-    aligned = AlignedFactorData(list(range(T)), y, F, ["Mkt-RF", "SMB", "HML"], np.zeros(T))
+    aligned = AlignedFactorData(
+        list(range(T)), y, F, ["Mkt-RF", "SMB", "HML"], np.zeros(T))
     return estimate_factor_model(aligned), betas
 
 
@@ -80,7 +88,8 @@ class TestHistoricalFactor:
         model, _ = model_3factor
         # Build a factor_wide covering a fake window
         T = 60
-        dates = pl.date_range(pl.date(2020, 2, 19), pl.date(2020, 2, 19) + pl.duration(days=T - 1),
+        dates = pl.date_range(
+            pl.date(2020, 2, 19), pl.date(2020, 2, 19) + pl.duration(days=T - 1),
                               interval="1d", eager=True)
         fw = pl.DataFrame({
             "date": dates,
@@ -97,7 +106,8 @@ class TestHistoricalFactor:
     def test_empty_window_raises(self, model_3factor):
         model, _ = model_3factor
         fw = pl.DataFrame({
-            "date": pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 5), interval="1d", eager=True),
+            "date": pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 5),
+                                  interval="1d", eager=True),
             "Mkt-RF": [0.0] * 5, "SMB": [0.0] * 5, "HML": [0.0] * 5,
         })
         scen = HistoricalScenario("OLD", "2008-09-01", "2009-03-09", "GFC")

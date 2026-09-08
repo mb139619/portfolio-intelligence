@@ -18,12 +18,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
-import polars as pl
 
-from src.domain.returns import ReturnSeries
 from src.analytics.correlation.matrices import (
-    correlation_matrix, correlation_distance,
+    correlation_distance,
+    correlation_matrix,
 )
+from src.domain.returns import ReturnSeries
 
 
 @dataclass
@@ -65,7 +65,7 @@ def cluster_correlations(
                   classic choice for HRP
       "average" — UPGMA
     """
-    from scipy.cluster.hierarchy import linkage, fcluster, leaves_list
+    from scipy.cluster.hierarchy import fcluster, leaves_list, linkage
     from scipy.spatial.distance import squareform
 
     corr = correlation_matrix(rs, method=corr_method)

@@ -26,7 +26,6 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import stats
 
-
 # ──────────────────────────────────────────────────────────────
 # Cornish-Fisher (modified VaR / CVaR)
 # ──────────────────────────────────────────────────────────────
@@ -93,7 +92,7 @@ class EVTResult:
                 else "thin-tailed (ξ<0)" if self.shape < -0.02
                 else "exponential tail (ξ≈0)")
         return "\n".join([
-            f"-- EVT / Peaks-Over-Threshold (GPD) --",
+            "-- EVT / Peaks-Over-Threshold (GPD) --",
             f"  threshold (u)     {self.threshold:>8.2%}",
             f"  exceedances       {self.n_exceedances} / {self.n_total} "
             f"({self.exceedance_rate:.1%})",
@@ -165,7 +164,7 @@ def tail_risk_comparison(returns: np.ndarray, confidence: float = 0.99) -> dict:
     Compare Gaussian, Cornish-Fisher, historical and EVT VaR at one confidence
     level — the four side by side make the impact of tail-modelling explicit.
     """
-    from src.analytics.performance import historical_var, historical_cvar
+    from src.analytics.performance import historical_cvar, historical_var
 
     out = {
         "gaussian_var": gaussian_var(returns, confidence),

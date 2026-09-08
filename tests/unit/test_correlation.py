@@ -10,18 +10,22 @@ import numpy as np
 import polars as pl
 import pytest
 
-from src.domain.returns import ReturnSeries
-from src.analytics.correlation.matrices import (
-    correlation_matrix, correlation_distance, ewma_covariance,
-    correlation_from_covariance,
-)
-from src.analytics.correlation.rolling import (
-    rolling_pairwise_correlation, average_correlation,
-)
 from src.analytics.correlation.clustering import (
-    cluster_correlations, reorder_correlation,
+    cluster_correlations,
+    reorder_correlation,
+)
+from src.analytics.correlation.matrices import (
+    correlation_distance,
+    correlation_from_covariance,
+    correlation_matrix,
+    ewma_covariance,
 )
 from src.analytics.correlation.network import build_mst
+from src.analytics.correlation.rolling import (
+    average_correlation,
+    rolling_pairwise_correlation,
+)
+from src.domain.returns import ReturnSeries
 
 
 def _make_rs(R, tickers):
@@ -29,7 +33,8 @@ def _make_rs(R, tickers):
     dates = pl.date_range(pl.date(2020, 1, 1),
                           pl.date(2020, 1, 1) + pl.duration(days=T - 1),
                           interval="1d", eager=True)
-    return ReturnSeries(pl.DataFrame({"date": dates, **{t: R[:, i] for i, t in enumerate(tickers)}}), tickers)
+    cols = {t: R[:, i] for i, t in enumerate(tickers)}
+    return ReturnSeries(pl.DataFrame({"date": dates, **cols}), tickers)
 
 
 @pytest.fixture
@@ -42,7 +47,8 @@ def two_block_returns():
     T = 1500
     f1 = np.random.normal(0, 0.01, T)
     f2 = np.random.normal(0, 0.01, T)
-    idio = lambda: np.random.normal(0, 0.003, T)
+    def idio():
+        return np.random.normal(0, 0.003, T)
     cols = {
         "A": f1 + idio(), "B": f1 + idio(), "C": f1 + idio(),
         "D": f2 + idio(), "E": f2 + idio(), "F": f2 + idio(),
@@ -99,9 +105,13 @@ class TestRolling:
         assert df.height == two_block_returns.n_obs - 63 + 1
         assert df["correlation"].max() <= 1.0 + 1e-9
 
-    def test_average_corr_blocks_vs_independent(self, two_block_returns, independent_returns):
-        avg_block = average_correlation(two_block_returns, window=252)["avg_correlation"].mean()
-        avg_indep = average_correlation(independent_returns, window=252)["avg_correlation"].mean()
+    def test_average_corr_blocks_vs_independent(
+        self, two_block_returns, independent_returns
+    ):
+        avg_block = average_correlation(
+            two_block_returns, window=252)["avg_correlation"].mean()
+        avg_indep = average_correlation(
+            independent_returns, window=252)["avg_correlation"].mean()
         # Block universe is more internally correlated on average than independent
         assert avg_block > avg_indep
 

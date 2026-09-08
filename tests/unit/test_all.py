@@ -8,12 +8,16 @@ import polars as pl
 import pytest
 
 from src.analytics.performance import (
-    total_return, annualized_return, annualized_volatility,
-    sharpe_ratio, max_drawdown, historical_var, historical_cvar,
+    annualized_return,
+    annualized_volatility,
     compute_metrics,
+    historical_cvar,
+    historical_var,
+    max_drawdown,
+    total_return,
 )
 from src.analytics.risk.decomposition import covariance_matrix, decompose_risk
-from src.domain.portfolio import Portfolio, Position, Asset, AssetClass
+from src.domain.portfolio import Asset, AssetClass, Portfolio, Position
 from src.domain.returns import ReturnSeries
 from src.store.parquet_store import ParquetStore
 
@@ -78,7 +82,8 @@ class TestPerformance:
 class TestRisk:
     def test_rc_sums_to_vol(self, random_returns):
         d = decompose_risk({"SPY": 0.5, "TLT": 0.3, "GLD": 0.2}, random_returns)
-        assert np.sum(d.risk_contribution) == pytest.approx(d.portfolio_volatility, rel=1e-6)
+        assert np.sum(d.risk_contribution) == pytest.approx(
+            d.portfolio_volatility, rel=1e-6)
 
     def test_pct_rc_sums_to_one(self, random_returns):
         d = decompose_risk({"SPY": 0.5, "TLT": 0.3, "GLD": 0.2}, random_returns)

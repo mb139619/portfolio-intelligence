@@ -19,15 +19,12 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
-from typing import Optional
 
 import polars as pl
-import requests
 from loguru import logger
 
 from src.ingestion.base import BaseIngester
 from src.ingestion.http import get_with_retry
-
 
 # ──────────────────────────────────────────────────────────────
 # Series registry — the single place that maps a logical rate
@@ -45,18 +42,23 @@ class RateSeries:
 
 RATE_REGISTRY: dict[str, RateSeries] = {
     # --- USD (FRED) ---
-    "USD_FEDFUNDS": RateSeries("USD_FEDFUNDS", "fred", "DFF", "USD", "Effective Fed Funds Rate"),
+    "USD_FEDFUNDS": RateSeries("USD_FEDFUNDS", "fred", "DFF", "USD",
+                               "Effective Fed Funds Rate"),
     "USD_3M":       RateSeries("USD_3M", "fred", "DGS3MO", "USD", "3-Month Treasury"),
     "USD_2Y":       RateSeries("USD_2Y", "fred", "DGS2", "USD", "2-Year Treasury"),
     "USD_10Y":      RateSeries("USD_10Y", "fred", "DGS10", "USD", "10-Year Treasury"),
     "USD_CPI":      RateSeries("USD_CPI", "fred", "CPIAUCSL", "USD", "US CPI"),
-    "USD_HY_OAS":   RateSeries("USD_HY_OAS", "fred", "BAMLH0A0HYM2", "USD", "US High Yield OAS"),
+    "USD_HY_OAS":   RateSeries("USD_HY_OAS", "fred", "BAMLH0A0HYM2", "USD",
+                               "US High Yield OAS"),
 
     # --- EUR (ECB Data Portal) ---
     # ECB key format: <dataflow>.<series key>
-    "EUR_DFR":      RateSeries("EUR_DFR", "ecb", "FM.D.U2.EUR.4F.KR.DFR.LEV", "EUR", "ECB Deposit Facility Rate"),
-    "EUR_MRO":      RateSeries("EUR_MRO", "ecb", "FM.D.U2.EUR.4F.KR.MRR_FR.LEV", "EUR", "ECB Main Refinancing Rate"),
-    "EUR_ESTR":     RateSeries("EUR_ESTR", "ecb", "EST.B.EU000A2X2A25.WT", "EUR", "Euro Short-Term Rate"),
+    "EUR_DFR":      RateSeries("EUR_DFR", "ecb", "FM.D.U2.EUR.4F.KR.DFR.LEV",
+                               "EUR", "ECB Deposit Facility Rate"),
+    "EUR_MRO":      RateSeries("EUR_MRO", "ecb", "FM.D.U2.EUR.4F.KR.MRR_FR.LEV",
+                               "EUR", "ECB Main Refinancing Rate"),
+    "EUR_ESTR":     RateSeries("EUR_ESTR", "ecb", "EST.B.EU000A2X2A25.WT",
+                               "EUR", "Euro Short-Term Rate"),
 }
 
 
@@ -73,7 +75,7 @@ class _FredBackend:
     """
     BASE = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 
-    def fetch(self, code: str, start: str, end: Optional[str]) -> pl.DataFrame:
+    def fetch(self, code: str, start: str, end: str | None) -> pl.DataFrame:
         params = {"id": code, "cosd": start}
         if end:
             params["coed"] = end
@@ -99,7 +101,7 @@ def _parse_fred_csv(text: str) -> pl.DataFrame:
 class _ECBBackend:
     BASE = "https://data-api.ecb.europa.eu/service/data"
 
-    def fetch(self, code: str, start: str, end: Optional[str]) -> pl.DataFrame:
+    def fetch(self, code: str, start: str, end: str | None) -> pl.DataFrame:
         dataflow, _, key = code.partition(".")
         params = {"format": "csvdata", "startPeriod": start}
         if end:
@@ -128,7 +130,9 @@ _BACKENDS = {"fred": _FredBackend(), "ecb": _ECBBackend()}
 class RatesIngester(BaseIngester):
     source_name = "rates"
 
-    def fetch(self, identifier: str, start: str, end: Optional[str] = None) -> pl.DataFrame:
+    def fetch(
+        self, identifier: str, start: str, end: str | None = None
+    ) -> pl.DataFrame:
         """identifier is a logical series id from RATE_REGISTRY (e.g. 'EUR_DFR')."""
         if identifier not in RATE_REGISTRY:
             raise ValueError(
@@ -150,7 +154,7 @@ class RatesIngester(BaseIngester):
         return df.filter(pl.col("value").is_not_null())
 
 
-def available_rates(currency: Optional[str] = None) -> list[str]:
+def available_rates(currency: str | None = None) -> list[str]:
     """List logical rate ids, optionally filtered by currency."""
     if currency:
         return sorted(s for s, r in RATE_REGISTRY.items() if r.currency == currency)
