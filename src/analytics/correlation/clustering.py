@@ -65,20 +65,38 @@ def cluster_correlations(
                   classic choice for HRP
       "average" — UPGMA
     """
+    corr = correlation_matrix(rs, method=corr_method)
+    return cluster_from_correlation(corr, rs.tickers, n_clusters, linkage_method)
+
+
+def cluster_from_correlation(
+    corr: np.ndarray,
+    tickers: list[str],
+    n_clusters: int = 3,
+    linkage_method: str = "ward",
+) -> ClusteringResult:
+    """
+    The same clustering, entered from a correlation matrix rather than a
+    ReturnSeries.
+
+    Exists so Hierarchical Risk Parity can reuse this code instead of building
+    its own linkage: HRP starts from a covariance estimate and has no returns
+    to hand, and two implementations of the same dendrogram would eventually
+    disagree about the tree they describe.
+    """
     from scipy.cluster.hierarchy import fcluster, leaves_list, linkage
     from scipy.spatial.distance import squareform
 
-    corr = correlation_matrix(rs, method=corr_method)
     dist = correlation_distance(corr)
     condensed = squareform(dist, checks=False)
 
     Z = linkage(condensed, method=linkage_method)
     order = leaves_list(Z).tolist()
-    labels = fcluster(Z, t=n_clusters, criterion="maxclust")
-    label_map = {rs.tickers[i]: int(labels[i]) for i in range(len(rs.tickers))}
+    labels = fcluster(Z, t=min(n_clusters, len(tickers)), criterion="maxclust")
+    label_map = {tickers[i]: int(labels[i]) for i in range(len(tickers))}
 
     return ClusteringResult(
-        tickers=rs.tickers,
+        tickers=list(tickers),
         linkage=Z,
         quasi_diagonal_order=order,
         cluster_labels=label_map,

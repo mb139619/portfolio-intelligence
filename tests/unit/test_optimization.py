@@ -12,7 +12,13 @@ Minimum-variance optimiser tests — validated against optimality invariants.
 import numpy as np
 import pytest
 
-from src.analytics.optimization import OptimizationResult, min_variance
+from src.analytics.optimization import (
+    LONG_ONLY,
+    LONG_SHORT,
+    Constraints,
+    OptimizationResult,
+    min_variance,
+)
 
 
 def _vol(Sigma, w):
@@ -67,18 +73,18 @@ class TestLongOnly:
         np.testing.assert_allclose(r.weights, [w1, 1 - w1], atol=1e-6)
 
     def test_max_weight_cap_respected(self, Sigma3):
-        r = min_variance(Sigma3, max_weight=0.5)
+        r = min_variance(Sigma3, Constraints(max_weight=0.5))
         assert r.weights.max() <= 0.5 + 1e-6
         assert r.weights.sum() == pytest.approx(1.0, abs=1e-8)
 
     def test_infeasible_cap_raises(self, Sigma3):
         with pytest.raises(ValueError):
-            min_variance(Sigma3, max_weight=0.2)   # 0.2 × 3 < 1
+            min_variance(Sigma3, Constraints(max_weight=0.2))   # 0.2 × 3 < 1
 
 
 class TestLongShort:
     def test_matches_closed_form(self, Sigma3):
-        r = min_variance(Sigma3, long_only=False)
+        r = min_variance(Sigma3, LONG_SHORT)
         z = np.linalg.solve(Sigma3, np.ones(3))
         expected = z / z.sum()
         np.testing.assert_allclose(r.weights, expected, atol=1e-12)
@@ -86,8 +92,8 @@ class TestLongShort:
 
     def test_variance_not_above_long_only(self, Sigma3):
         # Larger feasible set ⇒ variance no higher than the long-only optimum.
-        ls = min_variance(Sigma3, long_only=False)
-        lo = min_variance(Sigma3, long_only=True)
+        ls = min_variance(Sigma3, LONG_SHORT)
+        lo = min_variance(Sigma3, LONG_ONLY)
         assert _vol(Sigma3, ls.weights) <= _vol(Sigma3, lo.weights) + 1e-9
 
 
@@ -116,7 +122,7 @@ class TestEfficientFrontier:
         from src.analytics.optimization import efficient_frontier, min_variance
         mu = np.array([0.05, 0.08, 0.12])
         ef = efficient_frontier(Sigma3, mu, n_points=25)
-        gmv = min_variance(Sigma3, long_only=True)
+        gmv = min_variance(Sigma3, LONG_ONLY)
         v_left, _ = ef.min_variance_point
         assert abs(v_left - gmv.expected_volatility) < 1e-5
 
@@ -131,7 +137,7 @@ class TestEfficientFrontier:
     def test_weights_valid_long_only(self, Sigma3):
         from src.analytics.optimization import efficient_frontier
         mu = np.array([0.05, 0.08, 0.12])
-        ef = efficient_frontier(Sigma3, mu, n_points=15, long_only=True)
+        ef = efficient_frontier(Sigma3, mu, LONG_ONLY, n_points=15)
         assert np.all(ef.weights >= -1e-6)
         np.testing.assert_allclose(ef.weights.sum(axis=1), 1.0, atol=1e-6)
 

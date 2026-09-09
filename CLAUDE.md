@@ -338,18 +338,19 @@ is what keeps hosting free and the universe unbounded.
 closed-form long-short) and the efficient frontier; both surfaced on the
 dashboard's portfolio construction page.
 
-**Remaining:** risk parity, HRP, and the shared constraint interface. The
-existing optimisers take `long_only` and `max_weight` as ad-hoc keyword
-arguments, which is the per-optimizer hardcoding the constraint interface is
-meant to remove — introducing it means refactoring `min_variance` and
-`efficient_frontier` onto it, not bolting it onto the two new optimisers only.
+**Done (completing the milestone):** the shared `Constraints` interface —
+long-only, per-asset floor and cap, budget — with `min_variance` and
+`efficient_frontier` REFACTORED onto it rather than the interface being bolted
+onto the new optimisers only. Risk parity (equal risk contribution) and HRP,
+which reuses `cluster_from_correlation` rather than building a second linkage.
+All four surfaced as columns on the dashboard's weights table and as backtest
+strategies. Failure modes documented in METHODOLOGY §12b.
 
-Requirements: optimisers **consume** the existing risk engine and never
-recompute what it already produces; HRP reuses `cluster_correlations`, which
-already returns the quasi-diagonal order it needs; constraints are declared, not
-hardcoded; covariance estimation stays a pluggable choice. Document the failure
-modes in `METHODOLOGY.md` — mean-variance instability under estimation error,
-why HRP is more robust, what risk parity assumes.
+One finding worth keeping: risk parity started from equal weight makes SLSQP
+stall at an objective of 3e-2 *and report success* on a book with a wide
+volatility spread. Inverse volatility is the exact ERC solution under equal
+correlations and converges to 3e-15; the implementation checks realised
+dispersion rather than trusting `res.success`.
 
 These optimisers are also the second reference strategy for the backtester, so
 they are on the critical path.

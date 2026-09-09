@@ -29,7 +29,13 @@ from loguru import logger
 
 from src.backtest.engine import REBALANCE_FREQUENCIES, BacktestConfig, run
 from src.backtest.execution import CostModel
-from src.backtest.strategy import BuyAndHold, EqualWeight, MinimumVariance
+from src.backtest.strategy import (
+    BuyAndHold,
+    EqualWeight,
+    HierarchicalRiskParity,
+    MinimumVariance,
+    RiskParity,
+)
 from src.config import settings
 from src.store.parquet_store import ParquetStore
 
@@ -39,6 +45,8 @@ STRATEGIES = {
     "buy_and_hold": BuyAndHold,
     "equal_weight": EqualWeight,
     "min_variance": MinimumVariance,
+    "risk_parity": RiskParity,
+    "hrp": HierarchicalRiskParity,
 }
 
 

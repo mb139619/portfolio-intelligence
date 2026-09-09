@@ -156,14 +156,16 @@ class MinimumVariance:
         return {"max_weight": self.max_weight}
 
     def target_weights(self, ctx: Context) -> dict[str, float]:
-        from src.analytics.optimization import min_variance
+        from src.analytics.optimization import Constraints, min_variance
 
         if ctx.covariance is None:
             raise ValueError(
                 f"{self.name} needs a covariance estimate; run with "
                 f"BacktestConfig(with_covariance=True)."
             )
-        result = min_variance(ctx.covariance, max_weight=self.max_weight)
+        result = min_variance(
+            ctx.covariance, Constraints(max_weight=self.max_weight)
+        )
         if not result.success:
             # The optimiser returns its starting point on failure, which is
             # equal weight. Accepting that silently would turn this into a
@@ -175,3 +177,69 @@ class MinimumVariance:
                 f"estimate for that window."
             )
         return result.weights_dict()
+
+
+class RiskParity:
+    """
+    Equal risk contribution from the context's covariance.
+
+    Where `MinimumVariance` concentrates — it will happily drop assets to zero
+    — this one holds everything and sizes each position so that all contribute
+    the same amount of risk. Both consume `ctx.covariance` unchanged; the
+    difference is entirely in the objective.
+    """
+
+    name = "risk_parity"
+
+    def __init__(self, max_weight: float | None = None) -> None:
+        self.max_weight = max_weight
+
+    @property
+    def params(self) -> dict:
+        return {"max_weight": self.max_weight}
+
+    def target_weights(self, ctx: Context) -> dict[str, float]:
+        from src.analytics.optimization import Constraints, risk_parity
+
+        if ctx.covariance is None:
+            raise ValueError(f"{self.name} needs a covariance estimate")
+        result = risk_parity(ctx.covariance, Constraints(max_weight=self.max_weight))
+        if not result.success:
+            raise ValueError(
+                f"{self.name}: risk parity did not converge at {ctx.t} "
+                f"({result.message}). The contributions are not equal, so this "
+                f"is not the strategy it claims to be."
+            )
+        return result.weights_dict()
+
+
+class HierarchicalRiskParity:
+    """
+    HRP from the context's covariance.
+
+    Never inverts a matrix, which is what makes it hold up when the covariance
+    is poorly conditioned — exactly the windows where minimum variance produces
+    its most confident and least reliable answers.
+    """
+
+    name = "hrp"
+
+    def __init__(self, linkage_method: str = "single",
+                 max_weight: float | None = None) -> None:
+        self.linkage_method = linkage_method
+        self.max_weight = max_weight
+
+    @property
+    def params(self) -> dict:
+        return {"linkage_method": self.linkage_method,
+                "max_weight": self.max_weight}
+
+    def target_weights(self, ctx: Context) -> dict[str, float]:
+        from src.analytics.optimization import Constraints, hrp
+
+        if ctx.covariance is None:
+            raise ValueError(f"{self.name} needs a covariance estimate")
+        return hrp(
+            ctx.covariance, Constraints(max_weight=self.max_weight),
+            linkage_method=self.linkage_method,
+        ).weights_dict()

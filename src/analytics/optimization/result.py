@@ -17,6 +17,10 @@ class OptimizationResult:
     success: bool
     message: str = ""
     n_iter: int | None = None
+    # Which mandate produced these weights. Two runs of the same optimiser
+    # under different caps are different portfolios, and without this the
+    # result cannot say which one it is.
+    constraints: object | None = None
 
     def weights_dict(self) -> dict[str, float]:
         return dict(zip(self.tickers, self.weights.tolist()))
@@ -45,6 +49,10 @@ class OptimizationResult:
         lines = [
             f"-- Optimisation: {self.method} "
             f"({'OK' if self.success else 'FAILED'}) --",
+        ]
+        if self.constraints is not None:
+            lines.append(f"  constraints          {self.constraints.describe()}")
+        lines += [
             f"  expected vol (ann.)  {self.expected_volatility:>8.2%}",
             f"  effective positions  {self.effective_n_positions:>8.2f}"
             f"   (gross {self.gross_exposure:.2f}, net {self.net_exposure:.2f})",

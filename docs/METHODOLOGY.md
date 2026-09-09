@@ -703,6 +703,124 @@ finding on one cycle: see §12.4 before generalising it.
 
 ---
 
+## 12b. Portfolio construction
+
+Four allocators, all consuming the same covariance estimate and the same
+`Constraints` object. They differ only in what they optimise, and the
+differences are instructive rather than cosmetic.
+
+### The problem with mean-variance
+
+Markowitz optimisation inverts Σ. Inversion is where estimation error turns
+into leverage: the smallest eigenvalues of a sample covariance are the worst
+estimated, and Σ⁻¹ weights them most heavily. The optimiser reads noise in
+those directions as an arbitrage and takes large offsetting positions to
+exploit it — Michaud's "error maximisation".
+
+It is visible on this repository's own six-asset book. The unconstrained
+minimum-variance solution takes **+48.6% SPY against −21.7% QQQ**, two highly
+correlated equity exposures held in opposite directions because the estimate
+says their difference is quiet. The long-only solution on the same Σ holds
+neither leg.
+
+Mean-variance additionally needs expected returns, which are far noisier than
+covariances: to estimate a mean to the same relative precision as a variance
+requires roughly an order of magnitude more data. That is why every allocator
+here except the efficient frontier avoids μ entirely.
+
+### Minimum variance
+
+$$\min_w w^\top \Sigma w \quad \text{s.t.} \quad \sum_i w_i = 1$$
+
+No expected returns, so none of μ's noise. Long-only has a closed form only in
+the unconstrained case; with $w \ge 0$ it is a QP.
+
+The non-negativity constraint is not merely a mandate. Jagannathan & Ma (2003)
+showed it acts as an **implicit shrinkage** on Σ: forbidding short positions
+suppresses exactly the extreme offsetting bets that estimation error produces,
+which is why long-only minimum variance often beats its unconstrained
+counterpart out of sample despite optimising over a smaller feasible set.
+
+*Where it stops being valid:* it concentrates. On the book above it puts 44% in
+one asset and drops two others to zero. Minimising risk is not the same as
+diversifying, and a portfolio with the lowest variance is frequently the least
+diversified one available.
+
+### Risk parity (equal risk contribution)
+
+With $RC_i = w_i (\Sigma w)_i / \sigma_p$ and $\sum_i RC_i = \sigma_p$, solve
+for $RC_i = \sigma_p / n$ for every $i$.
+
+Implemented by minimising the squared dispersion of the contribution shares,
+which is zero exactly at the solution and behaves under box constraints — the
+log-barrier formulation is elegant unconstrained and awkward once caps appear.
+
+**Initialisation matters more than it looks.** Started from equal weight, SLSQP
+stalls on a book with a wide volatility spread — BTC at 76% alongside TLT at
+9% — reaching an objective of 3e-2 *and reporting success*. Started from
+inverse volatility, which is the exact ERC solution when all correlations are
+equal, the same problem converges to 3e-15 in twelve iterations. The
+implementation therefore checks the realised dispersion rather than trusting
+the optimiser's success flag.
+
+*What it assumes:* equalising risk is optimal only if every asset has the same
+Sharpe ratio and the same correlation to the rest. That assumption is rarely
+argued for and usually just implied. Risk parity also systematically
+overweights whatever is quiet, so it loaded into bonds through the
+falling-rate era and was exposed when that volatility turned out to be
+suppressed rather than structural. Real implementations lever the whole book
+to a volatility target; this one does not, so its returns are lower and its
+comparison to the others is like-for-like.
+
+### Hierarchical Risk Parity
+
+López de Prado (2016). Three steps: cluster assets by correlation distance,
+reorder so correlated assets are adjacent, then split capital recursively down
+the tree, allocating between each pair of halves inversely to cluster variance.
+
+**It never inverts a matrix.** Every step reads a variance off a small diagonal
+block, which is why it degrades gracefully on the ill-conditioned covariances
+that make mean-variance take enormous positions. On a near-singular fixture
+where the unconstrained minimum-variance solution reaches 2.4× gross exposure,
+HRP returns a long-only allocation summing to 1.
+
+The clustering is the same code the correlation page uses
+(`cluster_from_correlation`), not a second linkage: two implementations of the
+same dendrogram would eventually disagree about the tree they describe.
+
+*Where it stops being valid:* the tree is an estimate too. HRP is robust to
+inverting a noisy Σ, not to Σ being wrong — a correlation matrix fitted on too
+short a window gives an unstable dendrogram and the allocation moves with it.
+The bisection is also a convention rather than an optimum: splitting the
+ordered list down the middle is arbitrary at the margin, and a different
+linkage method can give a different order. And HRP optimises nothing, so it
+cannot be called optimal under any criterion. It is a heuristic that fails
+gracefully, which is a weaker and more honest claim than the one mean-variance
+makes.
+
+### Constraints
+
+All four take the same `Constraints` object — long-only, per-asset floor and
+cap, budget — because constraints are a property of the mandate, not of the
+objective. Feasibility is checked up front: an optimiser handed an impossible
+problem usually does not crash, it returns its starting point with
+`success=False`, and a caller that forgets to check gets a plausible-looking
+portfolio that is really just the initial guess.
+
+Caps interact differently with each method. Minimum variance and risk parity
+take them as bounds inside the solve. HRP has no way to express a cap in its
+recursion, so caps are applied afterwards by projection — which means a
+heavily capped HRP portfolio is no longer strictly HRP.
+
+> **📚 Key references**
+> - Markowitz, H. (1952), *Portfolio Selection*, Journal of Finance.
+> - Michaud, R. (1989), *The Markowitz Optimization Enigma: Is Optimized Optimal?*, Financial Analysts Journal.
+> - Jagannathan, R. & Ma, T. (2003), *Risk Reduction in Large Portfolios: Why Imposing the Wrong Constraints Helps*, Journal of Finance.
+> - Maillard, Roncalli & Teiletche (2010), *The Properties of Equally Weighted Risk Contribution Portfolios*, Journal of Portfolio Management.
+> - López de Prado, M. (2016), *Building Diversified Portfolios that Outperform Out of Sample*, Journal of Portfolio Management.
+
+---
+
 ## 13. General references & further reading
 
 Textbooks that cover the whole pipeline and are the standard desk references:

@@ -39,7 +39,13 @@ from src.analytics.correlation.rolling import average_correlation
 from src.analytics.factors.attribution import attribute_returns, decompose_factor_risk
 from src.analytics.factors.engine import estimate_factor_model, rolling_betas
 from src.analytics.factors.prepare import FF5_FACTORS, align_factors
-from src.analytics.optimization import efficient_frontier, min_variance
+from src.analytics.optimization import (
+    LONG_SHORT,
+    efficient_frontier,
+    hrp,
+    min_variance,
+    risk_parity,
+)
 from src.analytics.pca.concentration import detect_hidden_concentration
 from src.analytics.pca.model import fit_pca
 from src.analytics.performance import align_risk_free, compute_metrics
@@ -823,7 +829,13 @@ def build_optimization(ctx: Context) -> dict:
     n = len(tickers)
 
     mv = min_variance(cov)
-    mv_ls = min_variance(cov, long_only=False)
+    mv_ls = min_variance(cov, LONG_SHORT)
+    # Risk parity and HRP answer different questions from the same Σ: minimum
+    # variance minimises risk and concentrates, risk parity equalises the
+    # contributions, HRP allocates down a correlation tree without inverting
+    # anything. Showing them side by side is the point of the page.
+    rp = risk_parity(cov)
+    hrp_res = hrp(cov)
 
     ew = np.full(n, 1.0 / n)
     ew_vol = float(np.sqrt(ew @ cov.matrix @ ew))
@@ -855,6 +867,8 @@ def build_optimization(ctx: Context) -> dict:
         "current": [ctx.weights[t] for t in tickers],
         "equal_weight": [1.0 / n] * n,
         "min_variance": [mv.weights_dict()[t] for t in tickers],
+        "risk_parity": [rp.weights_dict()[t] for t in tickers],
+        "hrp": [hrp_res.weights_dict()[t] for t in tickers],
         "min_var_long_short": [mv_ls.weights_dict()[t] for t in tickers],
     })
 
@@ -872,6 +886,10 @@ def build_optimization(ctx: Context) -> dict:
                         "percent", "Expected volatility saved"),
             encode.stat("Effective positions", mv.effective_n_positions, "number",
                         f"of {n} — inverse Herfindahl of the min-variance weights"),
+            encode.stat("Risk parity volatility", rp.expected_volatility,
+                        "percent", "Every asset contributes equal risk"),
+            encode.stat("HRP volatility", hrp_res.expected_volatility, "percent",
+                        "No matrix inversion anywhere"),
             encode.stat("Long-short gross exposure", mv_ls.gross_exposure, "number",
                         "Σ|w| — leverage the unconstrained solution takes on"),
         ],
@@ -886,6 +904,8 @@ def build_optimization(ctx: Context) -> dict:
                     ctx.spec.name: ctx.weights,
                     "equal weight": {t: 1.0 / n for t in tickers},
                     "min variance": mv.weights_dict(),
+                    "risk parity": rp.weights_dict(),
+                    "HRP": hrp_res.weights_dict(),
                 }, title="Allocation by strategy"),
                 "weights_comparison", "Allocations side by side",
             ),
@@ -894,7 +914,8 @@ def build_optimization(ctx: Context) -> dict:
             "weights", "Weights by strategy", weights_df,
             formats={
                 "current": "percent", "equal_weight": "percent",
-                "min_variance": "percent", "min_var_long_short": "percent",
+                "min_variance": "percent", "risk_parity": "percent",
+                "hrp": "percent", "min_var_long_short": "percent",
             },
         )],
         notes=[
@@ -905,6 +926,11 @@ def build_optimization(ctx: Context) -> dict:
             "The frontier does need μ, and here it is the historical mean — a "
             "poor forecast, shown for construction purposes only. In practice μ "
             "would come from Black-Litterman or explicit views.",
+            "Risk parity holds every asset by construction and minimum variance "
+            "will drop assets outright, so the two differ most where the "
+            "covariance is least trustworthy. HRP never inverts Σ at all, which "
+            "is why it degrades gracefully when the estimate is poorly "
+            "conditioned — see METHODOLOGY §12.",
             f"The long-short solution reaches {mv_ls.expected_volatility:.2%} "
             f"volatility but with {mv_ls.gross_exposure:.2f}× gross exposure: "
             f"large offsetting legs fitted to the noise in Σ.",

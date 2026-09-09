@@ -19,7 +19,9 @@ from src.backtest.result import BacktestResult, Fold, RunMeta, current_git_commi
 from src.backtest.strategy import (
     BuyAndHold,
     EqualWeight,
+    HierarchicalRiskParity,
     MinimumVariance,
+    RiskParity,
     Strategy,
     normalise_weights,
 )
@@ -32,10 +34,12 @@ __all__ = [
     "Context",
     "CostModel",
     "EqualWeight",
+    "HierarchicalRiskParity",
     "Fold",
     "LookAheadError",
     "MinimumVariance",
     "RegimeState",
+    "RiskParity",
     "RunMeta",
     "Strategy",
     "current_git_commit",
