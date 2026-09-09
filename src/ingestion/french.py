@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+from dataclasses import dataclass
 
 import polars as pl
 from loguru import logger
@@ -23,11 +24,40 @@ from src.ingestion.http import get_with_retry
 
 BASE = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 
-DATASET_FILES = {
+# The library updates in batches roughly monthly, so a factor value dated D is
+# not knowable until well after D. Measured against this repo's own store the
+# gap has run 35 days behind the price data and 40 behind the current date; the
+# constant below is deliberately conservative, because a lag that is too short
+# silently readmits look-ahead while one that is too long only costs history.
+#
+# This cannot be derived from a single snapshot — a snapshot shows current
+# staleness, not when each observation first appeared — so it is a stated
+# assumption, recorded in RunMeta and surfaced in the tearsheet rather than
+# buried here.
+FRENCH_PUBLICATION_LAG_DAYS = 45
+
+
+@dataclass(frozen=True)
+class FactorDataset:
+    """A downloadable factor set and the metadata consumers need."""
+
+    name: str
+    filename: str
+    publication_lag_days: int
+    description: str
+
+
+FACTOR_REGISTRY: dict[str, FactorDataset] = {
     # --- US factors ---
-    "FF3": "F-F_Research_Data_Factors_daily_CSV.zip",
-    "FF5": "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
-    "MOM": "F-F_Momentum_Factor_daily_CSV.zip",
+    "FF3": FactorDataset(
+        "FF3", "F-F_Research_Data_Factors_daily_CSV.zip",
+        FRENCH_PUBLICATION_LAG_DAYS, "Fama-French 3 factors, daily"),
+    "FF5": FactorDataset(
+        "FF5", "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
+        FRENCH_PUBLICATION_LAG_DAYS, "Fama-French 5 factors, daily"),
+    "MOM": FactorDataset(
+        "MOM", "F-F_Momentum_Factor_daily_CSV.zip",
+        FRENCH_PUBLICATION_LAG_DAYS, "Momentum factor, daily"),
     # --- Developed / global factors ---
     # Use these for portfolios with material non-US exposure (e.g. EFA/EAFE):
     # regressing a global allocation on US-only factors is a defensible
@@ -35,10 +65,26 @@ DATASET_FILES = {
     # benchmark is conceptually US. These give the right opportunity set.
     # NOTE: the exact international filenames change occasionally on the French
     # site — verify against the data library directory if a download 404s.
-    "FF5_DEV": "Developed_5_Factors_Daily_CSV.zip",
-    "FF5_DEV_EX_US": "Developed_ex_US_5_Factors_Daily_CSV.zip",
-    "FF5_EUROPE": "Europe_5_Factors_Daily_CSV.zip",
+    "FF5_DEV": FactorDataset(
+        "FF5_DEV", "Developed_5_Factors_Daily_CSV.zip",
+        FRENCH_PUBLICATION_LAG_DAYS, "Developed markets 5 factors, daily"),
+    "FF5_DEV_EX_US": FactorDataset(
+        "FF5_DEV_EX_US", "Developed_ex_US_5_Factors_Daily_CSV.zip",
+        FRENCH_PUBLICATION_LAG_DAYS, "Developed ex-US 5 factors, daily"),
+    "FF5_EUROPE": FactorDataset(
+        "FF5_EUROPE", "Europe_5_Factors_Daily_CSV.zip",
+        FRENCH_PUBLICATION_LAG_DAYS, "European 5 factors, daily"),
 }
+
+# Kept as a derived view so existing call sites keep working.
+DATASET_FILES = {k: v.filename for k, v in FACTOR_REGISTRY.items()}
+
+
+def publication_lag_days(dataset: str) -> int:
+    """Days after which this dataset's observation for a date is knowable."""
+    if dataset not in FACTOR_REGISTRY:
+        raise ValueError(f"Unknown French dataset {dataset!r}")
+    return FACTOR_REGISTRY[dataset].publication_lag_days
 
 _DATE_ROW = re.compile(r"^\s*(\d{8})\s*,")
 
@@ -49,12 +95,12 @@ class FrenchIngester(BaseIngester):
     def fetch(
         self, identifier: str, start: str, end: str | None = None
     ) -> pl.DataFrame:
-        if identifier not in DATASET_FILES:
+        if identifier not in FACTOR_REGISTRY:
             raise ValueError(
                 f"Unknown French dataset '{identifier}'. "
-                f"Choose {list(DATASET_FILES)}"
+                f"Choose {list(FACTOR_REGISTRY)}"
             )
-        url = BASE + DATASET_FILES[identifier]
+        url = BASE + FACTOR_REGISTRY[identifier].filename
         logger.info(f"Downloading {url}")
         resp = get_with_retry(url, timeout=60)
 

@@ -38,6 +38,8 @@ class RateSeries:
     code: str            # backend-specific code
     currency: str
     description: str
+    # FRED and the ECB post daily series the following business day.
+    publication_lag_days: int = 1
 
 
 RATE_REGISTRY: dict[str, RateSeries] = {
@@ -152,6 +154,13 @@ class RatesIngester(BaseIngester):
 
     def validate(self, df: pl.DataFrame) -> pl.DataFrame:
         return df.filter(pl.col("value").is_not_null())
+
+
+def publication_lag_days(series_id: str) -> int:
+    """Days after which this series' observation for a date is knowable."""
+    if series_id not in RATE_REGISTRY:
+        raise ValueError(f"Unknown rate series {series_id!r}")
+    return RATE_REGISTRY[series_id].publication_lag_days
 
 
 def available_rates(currency: str | None = None) -> list[str]:

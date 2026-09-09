@@ -46,6 +46,14 @@ class PriceSource:
     asset_class: str
     exchange: str = ""     # CCXT venue, unused by Yahoo
     description: str = ""
+    # Days between an observation's date and the moment it could be known.
+    # A daily close is knowable at that close, so this is 0 for prices.
+    #
+    # Not to be confused with EXECUTION lag, which is a different thing and
+    # belongs to the execution layer: knowing today's close does not mean you
+    # could have traded at it. Conflating the two is a common way to smuggle
+    # in a bar of look-ahead.
+    publication_lag_days: int = 0
 
 
 PRICE_REGISTRY: dict[str, PriceSource] = {
@@ -75,6 +83,11 @@ def resolve(ticker: str) -> PriceSource:
         ticker=ticker, backend="yahoo", code=ticker,
         calendar=Calendar.TRADING_DAYS, asset_class="unknown",
     )
+
+
+def publication_lag_days(ticker: str) -> int:
+    """Days after which this ticker's observation for a date is knowable."""
+    return resolve(ticker).publication_lag_days
 
 
 def available_crypto() -> list[str]:

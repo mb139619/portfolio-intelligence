@@ -487,6 +487,68 @@ correlation.
 > smoothed probabilities use the whole series; for a point-in-time signal use the
 > *filtered* probabilities instead).
 
+### 10.1 Smoothed vs filtered probabilities
+
+The model reports both, and the choice is the difference between a description
+and a look-ahead bug.
+
+$$
+\text{smoothed}_s = P(S_s \mid r_1,\dots,r_T), \qquad
+\text{filtered}_s = P(S_s \mid r_1,\dots,r_s)
+$$
+
+The Kim smoother runs backwards, so a smoothed probability at time $s$
+incorporates every observation after $s$. **For describing history that is the
+correct estimate** — asked when the crisis was, one should use all the evidence
+— and it is what the dashboard, `regime_conditional_*` and the reported state
+frequencies use.
+
+As a trading signal it is invalid: the model has already seen the crash it is
+supposed to anticipate. Anything under `backtest/` must use `filtered_probs` /
+`filtered_states`, and `RegimeModel.probabilities_at()` therefore defaults to
+the filtered estimate — the safe default is the one that cannot leak.
+
+**Measured on the Mkt-RF series (9,212 daily observations, 2-state fit):**
+
+| | |
+|---|---|
+| Maximum divergence between the two probabilities | 0.780 |
+| Days whose hard classification differs | 793 (8.6%) |
+| Stress frequency, smoothed | 29.3% |
+| Stress frequency, filtered | 28.8% |
+
+The last two rows are the reason this is worth stating explicitly. The
+*aggregate* is nearly identical — half a percentage point apart — so every
+summary statistic looks unchanged. The disagreement is concentrated at the
+regime transitions, which is exactly where a regime-conditional strategy would
+act. A backtest built on smoothed states would appear sound in every headline
+number while being wrong at every turning point.
+
+By construction the two agree exactly on the final observation, where there is
+no future left to smooth over. That identity is used as a test.
+
+### 10.2 Publication lag
+
+Truncating data at the decision date is necessary and not sufficient. A value
+*dated* before $t$ is not necessarily *knowable* at $t$.
+
+The Kenneth French library updates in batches roughly monthly. Measured against
+this repository's own store the factor data has run **35 days behind the price
+data and 40 days behind the current date**. A backtest estimating factor betas
+at $t$ from data dated $t$ would therefore be using numbers nobody had.
+
+Each source declares a lag: 0 days for daily closes (a close is published at the
+close), 1 day for FRED and ECB daily series, and a deliberately conservative 45
+days for the French factors. The true factor lag cannot be recovered from a
+single snapshot — a snapshot shows current staleness, not when each observation
+first appeared — so it is a stated assumption, recorded in `RunMeta` and
+surfaced in the tearsheet rather than buried in code. Erring long only costs
+history; erring short silently readmits look-ahead.
+
+This is distinct from **execution lag**, which belongs to the execution layer:
+knowing today's close does not imply one could have traded at it. Conflating the
+two is a common way to smuggle in a bar of hindsight.
+
 > **📚 Key references**
 > - Hamilton, J. (1989), *A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle*, Econometrica (the regime-switching model).
 > - Kim, C-J. (1994), *Dynamic Linear Models with Markov-Switching*, J. of Econometrics (the smoother).

@@ -675,18 +675,25 @@ def _slice_regimes(regime, start: str):
 
     cutoff = dt.date.fromisoformat(start)
     idx = [i for i, d in enumerate(regime.dates) if d >= cutoff]
-    if not idx:
-        return regime.dates, regime.states, regime.smoothed_probs
-    lo = idx[0]
-    return regime.dates[lo:], regime.states[lo:], regime.smoothed_probs[lo:]
+    lo = idx[0] if idx else 0
+    # Slice the model as a whole. Replacing a subset of its arrays would
+    # leave the rest full-length and silently misaligned against the dates.
+    sliced = replace(
+        regime,
+        dates=regime.dates[lo:],
+        states=regime.states[lo:],
+        smoothed_probs=regime.smoothed_probs[lo:],
+        filtered_probs=regime.filtered_probs[lo:],
+    )
+    return sliced, lo
 
 
 def build_regimes(ctx: Context) -> dict:
     regime = ctx.regimes
     mkt_ret, mkt_dates = ctx.market
 
-    dates_w, states_w, probs_w = _slice_regimes(regime, ctx.spec.start)
-    lo = len(regime.dates) - len(dates_w)
+    regime_w, lo = _slice_regimes(regime, ctx.spec.start)
+    dates_w, states_w = regime_w.dates, regime_w.states
     mkt_w = mkt_ret[lo:]
 
     freqs = np.bincount(regime.states, minlength=regime.n_states) / len(regime.states)
@@ -800,10 +807,7 @@ def build_regimes(ctx: Context) -> dict:
                 "Shaded bands are the periods the model classifies as stress.",
             ),
             encode.figure(
-                plots.plot_regime_probability(
-                    replace(regime, dates=dates_w, states=states_w,
-                            smoothed_probs=probs_w),
-                ),
+                plots.plot_regime_probability(regime_w),
                 "regime_prob", "Probability of stress",
                 "Reading the probability rather than the hard classification "
                 "shows where the model is genuinely uncertain.",

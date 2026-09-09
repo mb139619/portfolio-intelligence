@@ -15,6 +15,27 @@ states are known, portfolio analytics are conditioned on them (see conditional.p
 Implementation note: states are canonicalised by ascending volatility, so
 state 0 is always the lowest-vol ("calm") regime and the last state the
 highest-vol ("stress") regime — stable, interpretable labels across refits.
+
+SMOOTHED vs FILTERED — read this before using a regime as a signal
+------------------------------------------------------------------
+The model exposes both, and choosing wrongly is a look-ahead bug that no
+amount of careful date-truncation will catch.
+
+  smoothed_probs[s] = P(state at s | ALL observations through T)
+  filtered_probs[s] = P(state at s | observations through s only)
+
+The Kim smoother runs backwards, so a smoothed probability at time s
+incorporates everything that happened *after* s. For describing history
+that is exactly right — asked when the crisis was, you should use all the
+evidence — and it is what the dashboard and the regime-conditional
+analytics use.
+
+As a trading signal it is catastrophic: the model has already seen the
+crash it is supposed to be warning about. Anything inside `backtest/` must
+use `filtered_probs` / `filtered_states`. The two agree most of the time
+and diverge precisely at turning points, which is where a regime strategy
+would act — so the disagreement is concentrated exactly where it does the
+most damage.
 """
 
 from __future__ import annotations
@@ -28,7 +49,8 @@ import numpy as np
 class RegimeModel:
     n_states: int
     states: np.ndarray                 # most-likely state per date (0..k-1), vol-sorted
-    smoothed_probs: np.ndarray = field(repr=False)   # (T, k)
+    smoothed_probs: np.ndarray = field(repr=False)   # (T, k), uses future data
+    filtered_probs: np.ndarray = field(repr=False)   # (T, k), causal
     means: np.ndarray = field(repr=False)            # per-state daily mean (sorted)
     volatilities: np.ndarray = field(repr=False)     # per-state daily vol (sorted)
     transition_matrix: np.ndarray = field(repr=False)
@@ -43,6 +65,16 @@ class RegimeModel:
     ppy: int = 252
 
     @property
+    def filtered_states(self) -> np.ndarray:
+        """
+        Most-likely state per date using only information available then.
+
+        This is the one a strategy may use. `states` is its smoothed twin
+        and looks into the future by construction.
+        """
+        return self.filtered_probs.argmax(axis=1)
+
+    @property
     def current_state(self) -> int:
         return int(self.states[-1])
 
@@ -53,6 +85,26 @@ class RegimeModel:
     def current_probabilities(self) -> dict[str, float]:
         return {self.labels[i]: float(self.smoothed_probs[-1, i])
                 for i in range(self.n_states)}
+
+    def probabilities_at(self, i: int, filtered: bool = True) -> dict[str, float]:
+        """
+        State probabilities at row `i`.
+
+        Defaults to the causal estimate: the safe default is the one that
+        cannot leak, so a caller has to ask explicitly for the version that
+        sees the future.
+        """
+        probs = self.filtered_probs if filtered else self.smoothed_probs
+        return {self.labels[k]: float(probs[i, k]) for k in range(self.n_states)}
+
+    def disagreement(self) -> float:
+        """
+        Largest gap between the filtered and smoothed probability of any
+        state on any date. A diagnostic: near zero means the smoother added
+        little, and a large value means the two tell materially different
+        stories at some point in the sample.
+        """
+        return float(np.abs(self.smoothed_probs - self.filtered_probs).max())
 
     def summary(self) -> str:
         lines = [f"-- Regime Model ({self.n_states} states, "
@@ -121,6 +173,8 @@ def fit_regimes(
     raw_vols = np.sqrt(np.abs(raw_vars))
 
     smoothed = np.asarray(res.smoothed_marginal_probabilities)  # (T, k)
+    # The causal counterpart, needed by anything that trades on the state.
+    filtered = np.asarray(res.filtered_marginal_probabilities)  # (T, k)
     trans = np.asarray(res.regime_transition)
     if trans.ndim == 3:
         trans = trans[:, :, 0]
@@ -135,6 +189,7 @@ def fit_regimes(
     means = raw_means[order]
     vols = raw_vols[order]
     smoothed = smoothed[:, order]
+    filtered = filtered[:, order]
     durations = durations[order]
     # reorder transition matrix rows and columns
     trans = trans[np.ix_(order, order)]
@@ -145,6 +200,7 @@ def fit_regimes(
         n_states=n_states,
         states=states,
         smoothed_probs=smoothed,
+        filtered_probs=filtered,
         means=means,
         volatilities=vols,
         transition_matrix=trans,

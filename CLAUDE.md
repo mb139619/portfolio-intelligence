@@ -382,7 +382,32 @@ regime sections assume the FF factors apply.
 
 ### Milestone C — Backtesting engine
 
-**Not started.** Architecture in §5, build order at the end of it.
+Architecture in §5, build order at the end of it.
+
+**Done:** the three contracts (`Context`, `Strategy`, `BacktestResult`) with
+their tests, and both point-in-time producers the contracts needed:
+
+- Every data source declares a publication lag (`prices`, `rates` and a new
+  `FACTOR_REGISTRY` in `french.py`, which previously had only a URL map). Before
+  this, `Context.publication_lag_days` was validated but structurally always
+  zero — a guarantee that looked enforced and was not.
+- `RegimeModel` exposes `filtered_probs` / `filtered_states` alongside the
+  smoothed ones. The smoothed estimate uses the whole series by construction and
+  is correct for description; a strategy must use the filtered one. On the real
+  market series the two disagree on 8.6% of days while the aggregate stress
+  frequency differs by half a point, so the mistake is invisible in summary
+  statistics. See METHODOLOGY §10.1.
+
+**Next:** the engine loop, with look-ahead assertions in the suite from the
+first commit. Note that `min_variance` already accepts a `CovarianceResult`, so
+`min_variance(ctx.covariance)` is a reference strategy today — the engine is not
+blocked on Milestone A's risk parity.
+
+**Cost to plan around:** `fit_regimes` dominates everything else. Measured on
+9,212 observations: 21.4s at `search_reps=20` (34 min for 96 monthly
+rebalances), 4.3s at `search_reps=5` (6.8 min), and no further gain below 5 —
+the floor is the single EM fit, not the restarts. Covariance re-estimation is
+negligible by comparison (0.1s for 96). Refit quarterly rather than monthly.
 
 ---
 
