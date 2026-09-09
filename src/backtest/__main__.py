@@ -85,13 +85,17 @@ def main(argv: list[str] | None = None) -> int:
     names = [s.strip() for s in args.strategies.split(",") if s.strip()]
     unknown = [n for n in names if n not in STRATEGIES]
     if unknown:
-        raise SystemExit(f"Unknown strategies {unknown}. Choose from {list(STRATEGIES)}")
+        raise SystemExit(
+            f"Unknown strategies {unknown}. Choose from {list(STRATEGIES)}"
+        )
 
     store = ParquetStore(settings.data_dir)
     try:
         rs = store.read_returns(tickers, start=args.start, end=args.end)
     except ValueError as e:
-        raise SystemExit(f"{e}\nRun `python -m src.export` first to populate the store.")
+        raise SystemExit(
+            str(e) + "  --  run `python -m src.export` first to populate the store."
+        )
 
     half = args.costs_bps / 2.0
     config = BacktestConfig(
@@ -133,7 +137,8 @@ def main(argv: list[str] | None = None) -> int:
         print("\nret/vol is computed against a zero risk-free rate.")
         meta = next(iter(results.values())).run_meta
         if not meta.is_reproducible:
-            print("Working tree is dirty: this run cannot be reproduced from its commit.")
+            print("Working tree is dirty: this run cannot be reproduced "
+                  "from its commit.")
 
     if args.save:
         out = Path(args.save)
