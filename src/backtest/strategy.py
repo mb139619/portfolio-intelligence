@@ -129,3 +129,38 @@ class BuyAndHold:
         if ctx.current_weights:
             return dict(ctx.current_weights)
         return dict.fromkeys(ctx.universe, 1.0 / len(ctx.universe))
+
+
+class MinimumVariance:
+    """
+    Minimum-variance weights from the context's own covariance estimate.
+
+    The point of this one is what it does *not* contain. There is no
+    re-estimation, no matrix algebra, no calendar handling: the risk engine
+    produced `ctx.covariance` and the optimiser consumes it unchanged. If
+    wrapping an optimiser had required more than this, the boundary between
+    the two layers would be in the wrong place.
+
+    Needs `BacktestConfig.with_covariance` (the default). It fails loudly
+    rather than silently falling back to equal weight, because a strategy that
+    quietly becomes a different strategy is worse than one that stops.
+    """
+
+    name = "min_variance"
+
+    def __init__(self, max_weight: float | None = None) -> None:
+        self.max_weight = max_weight
+
+    @property
+    def params(self) -> dict:
+        return {"max_weight": self.max_weight}
+
+    def target_weights(self, ctx: Context) -> dict[str, float]:
+        from src.analytics.optimization import min_variance
+
+        if ctx.covariance is None:
+            raise ValueError(
+                f"{self.name} needs a covariance estimate; run with "
+                f"BacktestConfig(with_covariance=True)."
+            )
+        return min_variance(ctx.covariance, max_weight=self.max_weight).weights_dict()

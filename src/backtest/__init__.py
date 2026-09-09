@@ -13,19 +13,34 @@ this package may be imported by the layers beneath it.
 """
 
 from src.backtest.context import Context, LookAheadError, RegimeState
+from src.backtest.engine import BacktestConfig, run, schedule
+from src.backtest.execution import CostModel, drift_weights, rebalance
 from src.backtest.result import BacktestResult, Fold, RunMeta, current_git_commit
-from src.backtest.strategy import BuyAndHold, EqualWeight, Strategy, normalise_weights
+from src.backtest.strategy import (
+    BuyAndHold,
+    EqualWeight,
+    MinimumVariance,
+    Strategy,
+    normalise_weights,
+)
 
 __all__ = [
+    "BacktestConfig",
     "BacktestResult",
     "BuyAndHold",
     "Context",
+    "CostModel",
     "EqualWeight",
     "Fold",
     "LookAheadError",
+    "MinimumVariance",
     "RegimeState",
     "RunMeta",
     "Strategy",
     "current_git_commit",
+    "drift_weights",
     "normalise_weights",
+    "rebalance",
+    "run",
+    "schedule",
 ]
