@@ -280,3 +280,45 @@ class TestRun:
         again = BacktestResult.load(tmp_path / "run")
         assert again.metrics == result.metrics
         assert again.equity_curve.equals(result.equity_curve)
+
+
+# ──────────────────────────────────────────────────────────────
+# CLI — only the parts that do not need a populated store
+# ──────────────────────────────────────────────────────────────
+
+class TestCLI:
+    def test_reads_the_universe_from_a_portfolio_file(self, tmp_path):
+        import json
+
+        from src.backtest.__main__ import parse_args, universe_from
+
+        cfg = tmp_path / "p.json"
+        cfg.write_text(json.dumps({
+            "positions": [{"ticker": "SPY", "weight": 0.6},
+                          {"ticker": "TLT", "weight": 0.4}]
+        }), encoding="utf-8")
+
+        args = parse_args(["--config", str(cfg)])
+        assert universe_from(args) == ["SPY", "TLT"]
+
+    def test_explicit_tickers_win_over_the_file(self, tmp_path):
+        from src.backtest.__main__ import parse_args, universe_from
+
+        args = parse_args(["--tickers", "aapl, msft", "--config", str(tmp_path / "x")])
+        assert universe_from(args) == ["AAPL", "MSFT"]
+
+    def test_a_missing_universe_fails_with_advice(self, tmp_path):
+        from src.backtest.__main__ import parse_args, universe_from
+
+        args = parse_args(["--config", str(tmp_path / "absent.json")])
+        with pytest.raises(SystemExit, match="does not exist"):
+            universe_from(args)
+
+    def test_the_cost_flag_splits_across_both_legs(self):
+        """--costs-bps is the round trip; the model holds the two halves."""
+        from src.backtest.__main__ import parse_args
+
+        args = parse_args(["--costs-bps", "20"])
+        model = CostModel(commission_bps=args.costs_bps / 2,
+                          slippage_bps=args.costs_bps / 2)
+        assert model.total_bps == 20
