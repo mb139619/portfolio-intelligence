@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.backtest import BacktestConfig, CostModel, Context, EqualWeight, run
+from src.backtest import BacktestConfig, Context, CostModel, EqualWeight, run
 from src.config import settings
 from src.store.parquet_store import ParquetStore
 

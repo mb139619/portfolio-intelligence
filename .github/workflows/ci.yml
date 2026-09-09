@@ -35,7 +35,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ examples/
 
       # The suite is deliberately offline: every test builds synthetic data or
       # monkeypatches the fetch, so nothing here touches Yahoo, FRED, the French
