@@ -417,14 +417,21 @@ def plot_var_distribution(
         ("Historical VaR", comp.get("historical_var"), NEGATIVE, "solid"),
         ("Historical CVaR", comp.get("historical_cvar"), "#7A1F22", "solid"),
     ]
-    for i, (name, val, color, dash) in enumerate(markers):
+    # Stack the labels rather than alternating top/bottom. The four VaR
+    # estimates sit within a few tenths of a percent of each other, so any
+    # scheme that puts two of them at the same height renders them on top of
+    # one another and the chart loses the comparison it exists to make.
+    drawn = 0
+    for name, val, color, dash in markers:
         if val is None:
             continue
         fig.add_vline(
             x=-val, line=dict(color=color, width=1.4, dash=dash),
-            annotation_text=name,
-            annotation_position="top" if i % 2 == 0 else "bottom",
+            annotation_text=name, annotation_position="top left",
+            annotation_yshift=-16 * drawn,
+            annotation_font=dict(size=10, color=color),
         )
+        drawn += 1
     _base_layout(fig, title)
     fig.update_xaxes(tickformat=".1%", title="daily return")
     fig.update_yaxes(title="frequency")
