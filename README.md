@@ -169,7 +169,7 @@ Both rates and prices are exposed through a **single interface**: you request a 
 | Calendars       | Trading-day vs continuous; intersection, never forward-fill           |
 | Backtesting     | *(next)* point-in-time engine, costs & slippage, walk-forward folds   |
 
-See [`docs/BACKTESTING.md`](docs/BACKTESTING.md) for the engine and how to write a strategy, [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the models and assumptions, [`docs/USAGE.md`](docs/USAGE.md) for a guided tour of the risk engine, and [`docs/DASHBOARD.md`](docs/DASHBOARD.md) for the web report.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the whole system fits together and every assumption it rests on, [`docs/BACKTESTING.md`](docs/BACKTESTING.md) for the engine and how to write a strategy, [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the models and assumptions, [`docs/USAGE.md`](docs/USAGE.md) for a guided tour of the risk engine, and [`docs/DASHBOARD.md`](docs/DASHBOARD.md) for the web report.
 
 ---
 
