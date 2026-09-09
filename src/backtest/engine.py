@@ -55,6 +55,10 @@ class BacktestConfig:
     costs: CostModel = field(default_factory=CostModel)
     allow_short: bool = False
     initial_capital: float = 1.0
+    # Σ|w| the book is scaled to. 1.0 means capital at risk equals
+    # capital; a long/short strategy wanting 100% long against 100% short
+    # asks for 2.0 explicitly rather than getting leverage by accident.
+    gross_target: float = 1.0
 
     # Derived quantities. Covariance is cheap; the regime fit is not, so it
     # gets its own, slower schedule — see CLAUDE.md §3.
@@ -200,6 +204,7 @@ def run(
             target = normalise_weights(
                 raw, ctx.universe,
                 strategy_name=strategy.name, allow_short=config.allow_short,
+                gross_target=config.gross_target,
             )
             weights, fills, cost_today = rebalance(weights, target, config.costs)
             equity *= 1.0 - cost_today
@@ -214,9 +219,14 @@ def run(
         # pre-trade equity would drag every metric toward zero and is not part
         # of the strategy's record.
         if started:
+            # Gross and net are recorded per bar rather than derived later:
+            # they drift between rebalances, so a summary computed from the
+            # target weights alone would describe a book nobody held.
             eq_rows.append({
                 "date": t, "equity": equity,
                 "ret": equity / prev_equity - 1.0 if prev_equity else 0.0,
+                "gross": sum(abs(w) for w in weights.values()),
+                "net": sum(weights.values()),
             })
             prev_equity = equity
             for tk, w in weights.items():
@@ -246,6 +256,13 @@ def run(
         "n_rebalances": len(set(trades["date"].to_list())) if len(trades) else 0,
         "final_equity": float(equity_curve["equity"][-1]),
         "contexts_built": guard.contexts,
+        "avg_gross_exposure": float(equity_curve["gross"].mean()),
+        "max_gross_exposure": float(equity_curve["gross"].max()),
+        "avg_net_exposure": float(equity_curve["net"].mean()),
+        "min_net_exposure": float(equity_curve["net"].min()),
+        "pct_days_with_shorts": float(
+            (positions["weight"] < 0).mean() if len(positions) else 0.0
+        ),
     }
 
     meta = RunMeta.create(

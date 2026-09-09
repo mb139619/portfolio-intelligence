@@ -91,10 +91,11 @@ def build_overview(result: BacktestResult) -> dict:
     m = result.metrics
     meta = result.run_meta
     oos = " (out of sample)" if result.folds else " (in sample)"
+    shape = "long/short" if result.is_long_short else "long-only"
 
     return encode.section(
         "overview", "Performance",
-        subtitle=f"{meta.strategy} · {meta.start} → {meta.end}{oos}",
+        subtitle=f"{meta.strategy} · {shape} · {meta.start} → {meta.end}{oos}",
         stats=[
             encode.stat("Ann. return", m.get("annualized_return"), "percent",
                         "Geometric"),
@@ -191,17 +192,37 @@ def build_trading(result: BacktestResult) -> dict:
         years = m["n_observations"] / result.run_meta.periods_per_year
         cost_drag = m["total_cost"] / years if years > 0 else None
 
+    stats = [
+        encode.stat("Total turnover", m.get("turnover"), "number",
+                    "Traded notional, whole run"),
+        encode.stat("Total cost", m.get("total_cost"), "percent", tone="bad"),
+        encode.stat("Cost drag", cost_drag, "percent", "Per year", tone="bad"),
+        encode.stat("Rebalances", m.get("n_rebalances"), "integer"),
+    ]
+    # Exposure tiles only earn their place on a long/short book. On a
+    # fully invested long-only run gross is 1 and net is 1 by construction,
+    # and a tile that always reads the same number teaches the reader to stop
+    # looking at tiles.
+    if result.is_long_short:
+        stats += [
+            encode.stat("Avg gross exposure", m.get("avg_gross_exposure"),
+                        "number", "Σ|w| — capital actually at risk"),
+            encode.stat("Max gross exposure", m.get("max_gross_exposure"),
+                        "number", "Peak between rebalances",
+                        tone="bad" if (m.get("max_gross_exposure") or 0) > 2
+                        else "neutral"),
+            encode.stat("Avg net exposure", m.get("avg_net_exposure"), "number",
+                        "Σw — directional tilt; ~0 is market-neutral"),
+            encode.stat("Days holding shorts", m.get("pct_days_with_shorts"),
+                        "percent"),
+        ]
+
     return encode.section(
         "trading", "Trading",
-        subtitle="What the strategy paid to exist",
-        stats=[
-            encode.stat("Total turnover", m.get("turnover"), "number",
-                        "Traded notional, whole run"),
-            encode.stat("Total cost", m.get("total_cost"), "percent", tone="bad"),
-            encode.stat("Cost drag", cost_drag, "percent", "Per year",
-                        tone="bad"),
-            encode.stat("Rebalances", m.get("n_rebalances"), "integer"),
-        ],
+        subtitle=("What the strategy paid to exist"
+                  + (" — and how much of it was short"
+                     if result.is_long_short else "")),
+        stats=stats,
         figures=[
             encode.figure(plots.plot_turnover(trades), "turnover",
                           "Turnover and cumulative cost"),
@@ -213,7 +234,15 @@ def build_trading(result: BacktestResult) -> dict:
         notes=[
             "Read this page before the performance page. A strategy whose return "
             "edge is smaller than its trading bill has not found anything.",
-        ],
+        ] + ([
+            "Gross exposure is what is actually at risk; net is the directional "
+            "tilt. They drift between rebalances, so these are measured per bar "
+            "rather than read off the target weights.",
+            "Borrow cost is NOT modelled. On a book that holds shorts "
+            f"{(m.get('pct_days_with_shorts') or 0):.0%} of the time, the "
+            "financing charge is a real cost this backtest omits, so the "
+            "result here is optimistic by that amount.",
+        ] if result.is_long_short else []),
     )
 
 

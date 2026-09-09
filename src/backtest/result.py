@@ -219,6 +219,30 @@ class BacktestResult:
         return self.equity_curve["date"].to_list()
 
     @property
+    def is_long_short(self) -> bool:
+        """
+        Did this run ever hold a short?
+
+        Derived from what was actually held rather than from the mandate: a
+        long/short configuration that never went short produced a long-only
+        record, and the metrics that mean something depend on the record.
+        """
+        return bool(len(self.positions) and (self.positions["weight"] < 0).any())
+
+    @property
+    def gross_exposure(self):
+        """Σ|w| per bar. Missing on runs saved before exposures were tracked."""
+        if "gross" in self.equity_curve.columns:
+            return self.equity_curve["gross"].to_numpy()
+        return None
+
+    @property
+    def net_exposure(self):
+        if "net" in self.equity_curve.columns:
+            return self.equity_curve["net"].to_numpy()
+        return None
+
+    @property
     def total_cost(self) -> float:
         return float(self.trades["cost"].sum()) if len(self.trades) else 0.0
 

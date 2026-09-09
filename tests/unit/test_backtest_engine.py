@@ -25,6 +25,7 @@ from src.backtest import (
     EqualWeight,
     MinimumVariance,
     drift_weights,
+    normalise_weights,
     rebalance,
     run,
     schedule,
@@ -322,3 +323,116 @@ class TestCLI:
         model = CostModel(commission_bps=args.costs_bps / 2,
                           slippage_bps=args.costs_bps / 2)
         assert model.total_bps == 20
+
+
+# ──────────────────────────────────────────────────────────────
+# Long/short books
+# ──────────────────────────────────────────────────────────────
+
+class DollarNeutralPair:
+    """Long A against short B. Net exposure zero by construction."""
+
+    name = "pair"
+
+    def target_weights(self, ctx):
+        return {"A": 1.0, "B": -1.0}
+
+
+class TestGrossNormalisation:
+    """
+    Normalising on net exposure is correct only for a fully invested long
+    book. On anything else it is silently catastrophic, and the closer to
+    market-neutral the worse: a 60/40 long/short pair sums to 0.2, so dividing
+    by it turned a 1x book into a 5x levered one.
+    """
+
+    def test_a_dollar_neutral_book_is_expressible_at_all(self):
+        w = normalise_weights({"A": 1.0, "B": -1.0}, ["A", "B"], allow_short=True)
+        assert sum(abs(v) for v in w.values()) == pytest.approx(1.0)
+        assert sum(w.values()) == pytest.approx(0.0)
+
+    def test_a_long_short_book_is_not_silently_levered(self):
+        w = normalise_weights({"A": 0.6, "B": -0.4}, ["A", "B"], allow_short=True)
+        assert sum(abs(v) for v in w.values()) == pytest.approx(1.0)
+        assert w["A"] == pytest.approx(0.6) and w["B"] == pytest.approx(-0.4)
+
+    def test_long_only_is_unchanged(self):
+        """Gross equals net for a long book, so this is the old behaviour."""
+        w = normalise_weights({"A": 2.0, "B": 2.0}, ["A", "B"])
+        assert w == {"A": 0.5, "B": 0.5}
+
+    def test_the_gross_target_is_honoured(self):
+        w = normalise_weights({"A": 1.0, "B": -1.0}, ["A", "B"],
+                              allow_short=True, gross_target=2.0)
+        assert sum(abs(v) for v in w.values()) == pytest.approx(2.0)
+
+
+class TestDriftOnPortfolioGrowth:
+    def test_a_neutral_book_does_not_explode(self):
+        """
+        Dividing by the sum of grown weights sent a ±50% pair to ±7x after one
+        +10%/−5% day. The denominator has to be the portfolio growth factor.
+        """
+        out = drift_weights({"A": 0.5, "B": -0.5}, {"A": 0.10, "B": -0.05})
+        assert sum(abs(v) for v in out.values()) < 1.5
+        assert out["A"] > 0.5 > abs(out["B"])
+
+    def test_long_only_still_sums_to_one(self):
+        out = drift_weights({"A": 0.6, "B": 0.4}, {"A": 0.05, "B": -0.02})
+        assert sum(out.values()) == pytest.approx(1.0)
+
+    def test_it_matches_the_old_formula_on_long_only(self):
+        """
+        For Σw = 1 the growth factor equals the sum of grown weights, so the
+        generalisation is exact rather than approximate.
+        """
+        rng = np.random.default_rng(0)
+        for _ in range(500):
+            n = int(rng.integers(2, 6))
+            w = rng.random(n)
+            w /= w.sum()
+            r = rng.normal(0, 0.02, n)
+            keys = [f"A{i}" for i in range(n)]
+            grown = {k: wi * (1 + ri) for k, wi, ri in zip(keys, w, r)}
+            legacy = {k: v / sum(grown.values()) for k, v in grown.items()}
+            out = drift_weights(dict(zip(keys, w)), dict(zip(keys, r)))
+            for k in keys:
+                assert out[k] == pytest.approx(legacy[k], abs=1e-14)
+
+
+class TestLongShortRun:
+    @pytest.fixture(scope="class")
+    def result(self):
+        rs = make_returns(n=900, tickers=("A", "B"), seed=21)
+        return run(DollarNeutralPair(), rs,
+                   BacktestConfig(rebalance="monthly", lookback=120,
+                                  allow_short=True, costs=CostModel()))
+
+    def test_the_run_completes(self, result):
+        assert len(result.equity_curve) > 0
+
+    def test_the_result_knows_it_is_long_short(self, result):
+        assert result.is_long_short
+
+    def test_a_long_only_run_knows_it_is_not(self):
+        r = run(EqualWeight(), make_returns(n=600),
+                BacktestConfig(rebalance="monthly", lookback=120))
+        assert not r.is_long_short
+
+    def test_net_exposure_stays_near_zero(self, result):
+        assert abs(result.metrics["avg_net_exposure"]) < 0.1
+
+    def test_gross_exposure_stays_near_the_target(self, result):
+        assert result.metrics["avg_gross_exposure"] == pytest.approx(1.0, abs=0.2)
+
+    def test_shorts_are_actually_held(self, result):
+        assert result.metrics["pct_days_with_shorts"] > 0
+
+    def test_exposures_are_recorded_per_bar(self, result):
+        assert result.gross_exposure is not None
+        assert len(result.gross_exposure) == len(result.equity_curve)
+
+    def test_shorting_is_refused_unless_enabled(self):
+        with pytest.raises(ValueError, match="long-only"):
+            run(DollarNeutralPair(), make_returns(n=600),
+                BacktestConfig(rebalance="monthly", lookback=120))

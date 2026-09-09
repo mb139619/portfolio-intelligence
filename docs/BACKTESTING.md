@@ -157,6 +157,7 @@ result.save("runs/mine")
 | `regime_refit` | `quarterly` | its own, slower schedule — see below |
 | `publication_lag_days` | 0 | days before an observation is knowable |
 | `allow_short` | `False` | negative weights are rejected unless enabled |
+| `gross_target` | 1.0 | Σ\|w\| the book is scaled to; 2.0 for 100% long vs 100% short |
 
 **On the regime cost.** Measured on 9,212 observations: `fit_regimes` takes
 21.4s at `search_reps=20` — 34 minutes across 96 monthly rebalances — and 4.3s
@@ -188,6 +189,44 @@ crash it is meant to anticipate. Anything under `backtest/` uses
 §10.1 for the measured divergence.
 
 ---
+
+## Long/short books
+
+Normalisation is on **gross** exposure, Σ|w|, not on the sum of the weights.
+For a long-only fully invested book the two are the same, so nothing about
+long-only changed. For anything else the difference is not subtle: a 60/40
+long/short pair sums to 0.2, so normalising on the sum turned a 1x book into a
+5x levered one, and an exactly market-neutral book divided by zero.
+
+Weights drift on the **portfolio growth factor**, 1 + w·r, not on the sum of
+the grown weights. Same story: identical when Σw = 1, and otherwise explosive —
+a ±50% pair came back as ±7x after a single +10%/−5% day.
+
+```python
+config = BacktestConfig(allow_short=True, gross_target=1.0)
+
+class Pair:
+    name = "pair"
+    def target_weights(self, ctx):
+        return {"A": 1.0, "B": -1.0}      # scaled to ±0.5 at gross 1.0
+```
+
+`gross_target=1.0` means the capital at risk equals the capital. A strategy
+wanting 100% long against 100% short asks for 2.0 explicitly, so leverage is
+declared rather than arrived at by accident.
+
+The result knows its own shape. `BacktestResult.is_long_short` is derived from
+what was actually held, not from the mandate — a long/short configuration that
+never went short produced a long-only record — and the metrics follow: gross
+and net exposure are recorded per bar, and the tearsheet shows those tiles only
+where they mean something. On a long-only run gross and net are both 1 by
+construction, and a tile that always reads the same number teaches the reader
+to stop looking at tiles.
+
+**Borrow cost is not modelled.** A short position pays a financing charge per
+day held, which this cost model has no concept of — it charges per trade. On a
+book that holds shorts half the time that omission is material, and the
+tearsheet says so on the trading page rather than leaving it to be discovered.
 
 ## Testing a strategy
 

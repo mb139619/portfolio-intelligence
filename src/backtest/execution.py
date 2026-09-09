@@ -80,14 +80,27 @@ def drift_weights(
     change without trading, which is the whole reason rebalancing costs
     anything. A backtest that resets to target every bar without charging for
     it is measuring a portfolio nobody could have held.
+
+    The denominator is the PORTFOLIO GROWTH FACTOR, 1 + w·r, not the sum of
+    the grown weights. For a long-only fully invested book the two are
+    identical, because Σw = 1 makes Σ w_i(1+r_i) = 1 + w·r — so this is a
+    strict generalisation and long-only results are unchanged.
+
+    They are not identical for anything else, and the difference is not
+    subtle. Dividing a near-neutral book by its own net exposure explodes it:
+    a ±50% pair after one +10%/−5% day came back as ±7x under the old
+    formula, and an exactly neutral book divided by zero.
     """
     if not weights:
         return {}
-    grown = {t: w * (1.0 + returns.get(t, 0.0)) for t, w in weights.items()}
-    total = sum(grown.values())
-    if abs(total) < 1e-12:
+    port_return = sum(w * returns.get(t, 0.0) for t, w in weights.items())
+    growth = 1.0 + port_return
+    if abs(growth) < 1e-12:
+        # The book is worth nothing; there are no meaningful weights left.
         return dict(weights)
-    return {t: v / total for t, v in grown.items()}
+    return {
+        t: w * (1.0 + returns.get(t, 0.0)) / growth for t, w in weights.items()
+    }
 
 
 def rebalance(

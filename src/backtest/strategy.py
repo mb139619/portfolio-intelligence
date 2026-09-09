@@ -48,6 +48,7 @@ def normalise_weights(
     *,
     strategy_name: str = "strategy",
     allow_short: bool = False,
+    gross_target: float = 1.0,
 ) -> dict[str, float]:
     """
     Validate and normalise what a strategy returned.
@@ -56,9 +57,18 @@ def normalise_weights(
     fails loudly at its own boundary instead of producing a plausible-looking
     equity curve that is quietly wrong.
 
-    Rejects assets outside the universe (a strategy cannot trade what the
-    context does not contain), non-finite values, and a zero-sum book. Scales
-    the rest to sum to 1.
+    **Normalisation is on GROSS exposure**, Σ|w|, scaled to `gross_target`.
+    For a long-only book gross equals net, so this is exactly the old
+    "scale to sum 1" and every long-only result is unchanged.
+
+    Normalising on net exposure — the sum — is correct only for a fully
+    invested long book and silently catastrophic otherwise: a 60/40 long/short
+    pair sums to 0.2, so dividing by it turned a 1x book into a 5x levered one,
+    and an exactly neutral book divided by zero. Gross is the invariant that
+    means the same thing for every mandate.
+
+    A gross_target of 1.0 means the capital at risk equals the capital. A
+    strategy wanting a levered book has to say so.
     """
     unknown = [t for t in raw if t not in universe]
     if unknown:
@@ -79,14 +89,15 @@ def normalise_weights(
                 f"run is long-only. Enable shorting explicitly if intended."
             )
 
-    total = sum(raw.values())
-    if abs(total) < 1e-12:
+    gross = sum(abs(w) for w in raw.values())
+    if gross < 1e-12:
         raise ValueError(
-            f"{strategy_name} returned weights summing to {total:.2e}; there is "
-            f"no book to normalise."
+            f"{strategy_name} returned an empty book (gross exposure "
+            f"{gross:.2e}); there is nothing to normalise."
         )
 
-    return {t: w / total for t, w in raw.items() if w != 0.0}
+    scale = gross_target / gross
+    return {t: w * scale for t, w in raw.items() if w != 0.0}
 
 
 class EqualWeight:

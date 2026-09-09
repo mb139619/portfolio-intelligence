@@ -212,7 +212,8 @@ This is the section to read before trusting a number.
 | decide at close, earn from tomorrow | `engine` | the bar ordering; a test pins it by orders of magnitude |
 | derived quantities refresh on the rebalance schedule | `Context` | stale but causal, recorded in `derived_as_of` |
 | filtered regime probabilities as signal | `_fit_regime_at` | smoothed would leak; the two disagree on 8.6% of days |
-| no leverage, no shorting by default | `Constraints` | risk parity is unlevered here, so its returns are lower than a levered implementation |
+| no leverage by default | `gross_target` = 1.0 | shorting is supported; a levered book must declare its gross explicitly |
+| borrow cost is not charged | `CostModel` | costs are per-trade, not per-day-held; a short-heavy result is optimistic by the financing charge |
 
 ### Structural
 

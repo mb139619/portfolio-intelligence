@@ -217,7 +217,7 @@ class TestNormaliseWeights:
         assert out["B"] < 0
 
     def test_rejects_an_empty_book(self):
-        with pytest.raises(ValueError, match="no book"):
+        with pytest.raises(ValueError, match="empty book"):
             normalise_weights({"A": 0.0, "B": 0.0}, ["A", "B"])
 
     def test_drops_zero_positions(self):

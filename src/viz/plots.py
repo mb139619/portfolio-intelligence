@@ -1006,13 +1006,38 @@ def plot_exposure(positions, title: str = "Exposure through time") -> go.Figure:
     dates = wide["date"].to_list()
     tickers = [c for c in wide.columns if c != "date"]
 
+    # Longs and shorts go in separate stack groups. A single group with a
+    # [0, 1] range silently clipped every short position out of the chart —
+    # a pair trade rendered as its long leg alone, which is worse than not
+    # drawing it.
+    values = np.concatenate([wide[t].to_numpy() for t in tickers])
+    has_shorts = bool((values < 0).any())
+
     fig = go.Figure()
     for i, t in enumerate(tickers):
-        fig.add_trace(go.Scatter(
-            x=dates, y=wide[t].to_list(), name=t, mode="lines",
-            stackgroup="one", line=dict(width=0.5, color=PALETTE[i % len(PALETTE)]),
-        ))
+        series = wide[t].to_numpy()
+        colour = PALETTE[i % len(PALETTE)]
+        if has_shorts:
+            fig.add_trace(go.Scatter(
+                x=dates, y=np.clip(series, 0, None), name=t, mode="lines",
+                stackgroup="long", line=dict(width=0.5, color=colour),
+                legendgroup=t,
+            ))
+            fig.add_trace(go.Scatter(
+                x=dates, y=np.clip(series, None, 0), name=t, mode="lines",
+                stackgroup="short", line=dict(width=0.5, color=colour),
+                legendgroup=t, showlegend=False,
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=dates, y=series.tolist(), name=t, mode="lines",
+                stackgroup="one", line=dict(width=0.5, color=colour),
+            ))
+
     _base_layout(fig, title, height=400)
-    fig.update_yaxes(tickformat=".0%", title="weight", range=[0, 1])
+    fig.update_yaxes(tickformat=".0%", title="weight",
+                     range=None if has_shorts else [0, 1])
+    if has_shorts:
+        fig.add_hline(y=0, line_color="rgba(0,0,0,0.35)", line_width=1)
     fig.update_layout(legend=dict(orientation="h", y=1.08))
     return fig
