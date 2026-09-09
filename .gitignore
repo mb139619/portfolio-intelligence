@@ -19,3 +19,4 @@ notebooks/**/*.ipynb
 #   the --standalone bundle inlines Plotly and the payload into ~6 MB of HTML,
 #   which is a build output, not a source file.
 web/data/*.html
+runs/

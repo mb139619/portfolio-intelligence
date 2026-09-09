@@ -154,3 +154,66 @@ class TestFactorCovariance:
 def test_unknown_method_raises(rs5):
     with pytest.raises(ValueError):
         estimate_covariance(rs5, method="nope")
+
+
+class TestZeroVarianceAssets:
+    """
+    A constant series is not exotic — a halted listing, a pegged rate, a
+    stablecoin, or an illiquid name that did not move in a short window. The
+    constant-correlation shrinkage divided by its zero standard deviation
+    twice and returned a matrix full of NaN, which the optimiser then failed
+    on silently.
+    """
+
+    @staticmethod
+    def _series_with_a_constant_asset(n=300):
+        import datetime as dt
+
+        rng = np.random.default_rng(0)
+        dates = [dt.date(2020, 1, 1) + dt.timedelta(days=i) for i in range(n)]
+        return ReturnSeries(
+            pl.DataFrame({"date": dates,
+                          "A": rng.normal(0.0, 0.01, n),
+                          "FLAT": [0.0] * n}),
+            ["A", "FLAT"],
+        )
+
+    @pytest.mark.parametrize(
+        "method", ["sample", "ledoit_wolf", "ledoit_wolf_cc", "ewma"])
+    def test_no_estimator_returns_nan(self, method):
+        cov = estimate_covariance(self._series_with_a_constant_asset(), method=method)
+        assert not np.isnan(cov.matrix).any(), f"{method} produced NaN"
+
+    def test_the_constant_asset_gets_zero_variance_and_zero_covariance(self):
+        cov = estimate_covariance(self._series_with_a_constant_asset(),
+                                  method="ledoit_wolf_cc")
+        assert cov.matrix[1, 1] == pytest.approx(0.0)
+        assert cov.matrix[0, 1] == pytest.approx(0.0)
+        assert cov.matrix[0, 0] > 0
+
+    def test_the_result_is_still_psd(self):
+        cov = estimate_covariance(self._series_with_a_constant_asset(),
+                                  method="ledoit_wolf_cc")
+        assert cov.is_psd()
+
+    def test_normal_data_is_untouched_by_the_guard(self):
+        """
+        The guard only fires where a standard deviation is zero, so ordinary
+        estimates must be unchanged. Verified against a reference computed
+        without any degenerate column.
+        """
+        import datetime as dt
+
+        rng = np.random.default_rng(1)
+        n = 400
+        dates = [dt.date(2020, 1, 1) + dt.timedelta(days=i) for i in range(n)]
+        rs = ReturnSeries(
+            pl.DataFrame({"date": dates,
+                          "A": rng.normal(0.0004, 0.01, n),
+                          "B": rng.normal(0.0002, 0.008, n)}),
+            ["A", "B"],
+        )
+        cov = estimate_covariance(rs, method="ledoit_wolf_cc")
+        assert not np.isnan(cov.matrix).any()
+        assert cov.is_psd()
+        assert 0.0 <= cov.shrinkage <= 1.0

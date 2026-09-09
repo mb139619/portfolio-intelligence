@@ -163,4 +163,15 @@ class MinimumVariance:
                 f"{self.name} needs a covariance estimate; run with "
                 f"BacktestConfig(with_covariance=True)."
             )
-        return min_variance(ctx.covariance, max_weight=self.max_weight).weights_dict()
+        result = min_variance(ctx.covariance, max_weight=self.max_weight)
+        if not result.success:
+            # The optimiser returns its starting point on failure, which is
+            # equal weight. Accepting that silently would turn this into a
+            # different strategy on exactly the windows where the covariance
+            # was worst -- the ones whose behaviour matters most.
+            raise ValueError(
+                f"{self.name}: minimum-variance solve failed at {ctx.t} "
+                f"({result.message or 'no message'}). Check the covariance "
+                f"estimate for that window."
+            )
+        return result.weights_dict()

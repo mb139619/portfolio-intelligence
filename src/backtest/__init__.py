@@ -23,6 +23,7 @@ from src.backtest.strategy import (
     Strategy,
     normalise_weights,
 )
+from src.backtest.walkforward import make_folds, walk_forward
 
 __all__ = [
     "BacktestConfig",
@@ -38,9 +39,11 @@ __all__ = [
     "RunMeta",
     "Strategy",
     "current_git_commit",
+    "make_folds",
     "drift_weights",
     "normalise_weights",
     "rebalance",
     "run",
     "schedule",
+    "walk_forward",
 ]

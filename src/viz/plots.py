@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
+import polars as pl
 
 from src.analytics.performance import drawdown_series
 
@@ -842,5 +843,169 @@ def plot_stress_summary(
         tickformat=".0%", title="portfolio PnL",
         range=[min(lo, 0.0) - pad, max(hi, 0.0) + pad],
     )
+    fig.update_layout(legend=dict(orientation="h", y=1.08))
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 19. Backtest equity with walk-forward fold boundaries
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_backtest_equity(
+    result,
+    title: str = "Out-of-sample equity",
+) -> go.Figure:
+    """
+    Equity curve and drawdown, with walk-forward test windows shaded.
+
+    The shading is the point. A single undifferentiated curve invites the
+    reader to assume the whole thing was out of sample; marking the folds
+    makes the claim specific and checkable.
+    """
+    from plotly.subplots import make_subplots
+
+    dates = result.equity_curve["date"].to_list()
+    equity = result.equity_curve["equity"].to_numpy()
+    dd = drawdown_series(result.equity_curve["ret"].to_numpy())
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, row_heights=[0.68, 0.32],
+        vertical_spacing=0.06, subplot_titles=("Equity", "Drawdown"),
+    )
+    fig.add_trace(
+        go.Scatter(x=dates, y=equity, mode="lines", name="equity",
+                   line=dict(color=PALETTE[0], width=1.8)),
+        row=1, col=1,
+    )
+    fig.add_trace(
+        go.Scatter(x=dates, y=dd, mode="lines", name="drawdown", fill="tozeroy",
+                   line=dict(color=NEGATIVE, width=1),
+                   fillcolor="rgba(196,78,82,0.25)"),
+        row=2, col=1,
+    )
+    # AFTER the traces, not before. On a subplot figure add_vrect is a silent
+    # no-op until a trace has materialised the axes it references — no error,
+    # no warning, just a chart missing the thing it exists to show.
+    for i, fold in enumerate(result.folds or []):
+        if i % 2:
+            continue                      # shade alternate folds, not every one
+        fig.add_vrect(
+            x0=fold.test_start, x1=fold.test_end,
+            fillcolor="rgba(46,94,170,0.07)", line_width=0,
+            layer="below", row=1, col=1,
+        )
+    fig = _base_layout(fig, title, height=560)
+    fig.update_yaxes(tickformat=".0%", row=2, col=1)
+    fig.update_layout(showlegend=False)
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 20. Rolling Sharpe — is the edge constant or one lucky stretch?
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_rolling_sharpe(
+    returns: np.ndarray,
+    dates: list,
+    window: int = 252,
+    ppy: int = 252,
+    title: str | None = None,
+) -> go.Figure:
+    """
+    Trailing risk-adjusted return, against the full-sample value.
+
+    A headline Sharpe hides whether the edge was steady or came from one
+    stretch. Long spells below zero on a strategy with a good full-sample
+    number usually mean the number belongs to a period, not to the strategy.
+    """
+    r = np.asarray(returns, dtype=float)
+    if title is None:
+        title = f"Rolling return/volatility ({window}d)"
+    n = len(r)
+    roll = np.full(n, np.nan)
+    for i in range(window, n + 1):
+        w = r[i - window:i]
+        sd = w.std(ddof=1)
+        roll[i - 1] = (w.mean() * ppy) / (sd * np.sqrt(ppy)) if sd > 0 else np.nan
+
+    full_sd = r.std(ddof=1)
+    full = (r.mean() * ppy) / (full_sd * np.sqrt(ppy)) if full_sd > 0 else 0.0
+
+    fig = go.Figure(go.Scatter(x=dates, y=roll, mode="lines",
+                               line=dict(color=PALETTE[0], width=1.6)))
+    fig.add_hline(y=full, line=dict(color=NEGATIVE, width=1, dash="dash"),
+                  annotation_text=f"full sample {full:.2f}",
+                  annotation_position="top left")
+    fig.add_hline(y=0, line_color="rgba(0,0,0,0.3)", line_width=1)
+    _base_layout(fig, title)
+    fig.update_yaxes(title="return / volatility")
+    fig.update_layout(showlegend=False)
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 21. Turnover and cost per rebalance
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_turnover(trades, title: str = "Turnover per rebalance") -> go.Figure:
+    """
+    Traded notional at each rebalance, with the cumulative cost behind it.
+
+    Turnover is a first-class result, not a footnote: a strategy whose return
+    edge is smaller than its trading bill has not found anything.
+    """
+    if trades is None or len(trades) == 0:
+        return _base_layout(go.Figure(), title, height=320)
+
+    by_date = (
+        trades.group_by("date")
+        .agg([pl.col("delta_weight").abs().sum().alias("turnover"),
+              pl.col("cost").sum().alias("cost")])
+        .sort("date")
+    )
+    dates = by_date["date"].to_list()
+    cumulative = np.cumsum(by_date["cost"].to_numpy())
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=dates, y=by_date["turnover"].to_list(),
+                         name="turnover", marker_color=PALETTE[0]))
+    fig.add_trace(go.Scatter(x=dates, y=cumulative, name="cumulative cost",
+                             yaxis="y2", mode="lines",
+                             line=dict(color=NEGATIVE, width=1.8)))
+    _base_layout(fig, title, height=360)
+    fig.update_yaxes(title="traded notional")
+    fig.update_layout(
+        yaxis2=dict(title="cumulative cost", overlaying="y", side="right",
+                    tickformat=".1%", showgrid=False),
+        legend=dict(orientation="h", y=1.12),
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 22. Exposure through time
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_exposure(positions, title: str = "Exposure through time") -> go.Figure:
+    """
+    Stacked weights per asset. Shows what the strategy actually held, which is
+    often less diversified than its description implies.
+    """
+    if positions is None or len(positions) == 0:
+        return _base_layout(go.Figure(), title, height=380)
+
+    wide = positions.pivot(index="date", on="ticker",
+                           values="weight").sort("date").fill_null(0.0)
+    dates = wide["date"].to_list()
+    tickers = [c for c in wide.columns if c != "date"]
+
+    fig = go.Figure()
+    for i, t in enumerate(tickers):
+        fig.add_trace(go.Scatter(
+            x=dates, y=wide[t].to_list(), name=t, mode="lines",
+            stackgroup="one", line=dict(width=0.5, color=PALETTE[i % len(PALETTE)]),
+        ))
+    _base_layout(fig, title, height=400)
+    fig.update_yaxes(tickformat=".0%", title="weight", range=[0, 1])
     fig.update_layout(legend=dict(orientation="h", y=1.08))
     return fig

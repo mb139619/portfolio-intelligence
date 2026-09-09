@@ -228,7 +228,17 @@ def _ledoit_wolf_constant_correlation(R: np.ndarray) -> tuple[np.ndarray, float]
     sample = (x.T @ x) / t                       # MLE sample covariance (1/T)
     var = np.diag(sample)
     sqrtvar = np.sqrt(var)
-    outer_sqrt = np.outer(sqrtvar, sqrtvar)
+
+    # A zero-variance asset is not exotic -- a halted listing, a pegged rate, a
+    # stablecoin, or simply an illiquid name that did not move in a short
+    # window. Left alone it divides by zero twice below and poisons the whole
+    # matrix with NaN, which then flows into the optimiser and comes back as a
+    # failed solve nobody checks. Its correlation with anything is undefined, so
+    # the convention here is the same one `correlation_from_covariance` already
+    # uses: normalise by 1 and let the resulting covariance entries be the zeros
+    # they genuinely are.
+    safe_sqrtvar = np.where(sqrtvar > 0, sqrtvar, 1.0)
+    outer_sqrt = np.outer(safe_sqrtvar, safe_sqrtvar)
 
     # average off-diagonal sample correlation r̄
     corr = sample / outer_sqrt
@@ -236,6 +246,10 @@ def _ledoit_wolf_constant_correlation(R: np.ndarray) -> tuple[np.ndarray, float]
 
     # constant-correlation target F
     prior = r_bar * outer_sqrt
+    # Zero-variance rows and columns stay zero: no correlation target can
+    # manufacture covariance for an asset that does not move.
+    prior[sqrtvar == 0, :] = 0.0
+    prior[:, sqrtvar == 0] = 0.0
     np.fill_diagonal(prior, var)
 
     # π̂ : sum of asymptotic variances of the sample covariance entries
@@ -249,7 +263,7 @@ def _ledoit_wolf_constant_correlation(R: np.ndarray) -> tuple[np.ndarray, float]
     cube_cross = ((x ** 3).T @ x) / t            # [i,j] = E[x_i^3 x_j]
     theta_ii = cube_cross - var[:, None] * sample        # ϑ_ii,ij
     theta_jj = cube_cross.T - var[None, :] * sample      # ϑ_jj,ij
-    ratio = np.outer(sqrtvar, 1.0 / sqrtvar)             # [i,j] = √(s_ii/s_jj)
+    ratio = np.outer(safe_sqrtvar, 1.0 / safe_sqrtvar)   # [i,j] = √(s_ii/s_jj)
     off = (r_bar / 2.0) * (ratio * theta_jj + (1.0 / ratio) * theta_ii)
     np.fill_diagonal(off, 0.0)
     rho_hat = np.diag(phi_mat).sum() + off.sum()

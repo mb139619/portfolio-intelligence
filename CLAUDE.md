@@ -398,8 +398,14 @@ their tests, and both point-in-time producers the contracts needed:
   frequency differs by half a point, so the mistake is invisible in summary
   statistics. See METHODOLOGY §10.1.
 
-**Next:** the engine loop, with look-ahead assertions in the suite from the
-first commit. Note that `min_variance` already accepts a `CovarianceResult`, so
+**Also done:** the engine loop (bar ordering pinned by a test that a leak
+fails by orders of magnitude), the execution layer, walk-forward with blind
+per-fold selection, and the tearsheet as a second section producer feeding
+`src/export/`.
+
+**Next:** Milestone A's risk parity and HRP, which widen the walk-forward
+candidate pool; and a run index so the SPA can compare runs rather than
+render one. Note that `min_variance` already accepts a `CovarianceResult`, so
 `min_variance(ctx.covariance)` is a reference strategy today — the engine is not
 blocked on Milestone A's risk parity.
 

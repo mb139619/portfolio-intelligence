@@ -250,11 +250,61 @@ distance between those two numbers is the reason this project exists.
 
 ---
 
+## Walk-forward
+
+Splitting a run into train and test windows only means something if the split
+changes what happens. Labelling half a single run "out of sample" while the
+strategy was chosen by looking at all of it is decoration.
+
+So the harness makes the choice inside each fold: candidates are ranked on the
+training window, the winner alone is carried into the test window, and only the
+test segments are stitched into the reported curve.
+
+```python
+from src.backtest import walk_forward, EqualWeight, MinimumVariance
+
+result = walk_forward([EqualWeight(), MinimumVariance()], rs, config,
+                      n_folds=5, scheme="expanding", min_train=504)
+result.metrics["selection_stability"]   # 1.0 = one rule won every fold
+result.metrics["fold_selection"]        # what won where, and on what score
+```
+
+`expanding` training always starts at the beginning and grows; `rolling` slides
+a fixed window. Neither is right in general, and running both and finding they
+disagree is a finding about the strategy.
+
+**The test that pins it.** A series where asset A rises in the first half and B
+in the second, so whichever strategy wins the training window is the wrong one
+for the test window. The harness must pick the training winner and must
+therefore lose out of sample — a harness that never loses is cheating.
+
+## Tearsheet
+
+```bash
+python -m src.export.tearsheet runs/my_run --serve
+python -m src.export.tearsheet runs/my_run --standalone
+```
+
+A second section producer feeding the existing `src/export/` pipeline — the
+same payload schema and the same SPA that render the portfolio dashboard, not a
+parallel reporting stack. It reads a run from disk, which is the point of
+`BacktestResult.save()`: a result can be re-rendered months later without
+rerunning anything.
+
+Four pages: performance with the equity curve and fold bands, risk with rolling
+return/volatility and the return distribution, trading with turnover and
+exposure, and the walk-forward fold table. The banner carries reasons to
+distrust the run — a dirty working tree, an absence of folds, unstable
+selection — separately from the assumptions, which sit next to the numbers they
+qualify.
+
+**It computes nothing.** Every number comes from `BacktestResult.metrics` and
+every chart from `viz.plots`. A missing metric is added to the result object,
+never calculated in the report, or the two drift and only the report is read.
+
 ## Not built yet
 
-- **Walk-forward.** `BacktestResult.folds` and `out_of_sample()` exist and
-  `Fold` refuses overlapping train/test windows, but nothing generates folds
-  yet. Until then every result here is in-sample.
-- **Tearsheet.** Will be a second section producer feeding the existing
-  `src/export/` pipeline, not a new reporting stack.
-- **Risk parity and HRP** (Milestone A), which become reference strategies.
+- **Risk parity and HRP** (Milestone A), which become further reference
+  strategies and give the walk-forward selection a wider pool.
+- **Comparing runs.** The SPA loads one payload; a run index is additive to the
+  same shell.
